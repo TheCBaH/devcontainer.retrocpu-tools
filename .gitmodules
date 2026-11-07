@@ -1,0 +1,10 @@
+[submodule "sources/simh"]
+	path = sources/simh
+	url = https://github.com/open-simh/simh.git
+[submodule "sources/i8080-core"]
+	path = sources/i8080-core
+	url = https://github.com/begoon/i8080-core.git
+[submodule "sources/asl-releases"]
+	path = sources/asl-releases
+	url = https://github.com/Macroassembler-AS/asl-releases.git
+	branch = upstream
