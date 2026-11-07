@@ -1,0 +1,146 @@
+--- a/8080PRE.MAC
++++ b/8080PRE.MAC
+@@ -39,8 +39,7 @@
+ ;
+ ;******************************************************************************
+ 
+-	.8080
+-	aseg
++	cpu	8080
+ 	org	100h
+ 
+ start:	mvi	a,1		; test simple compares and z/nz jumps
+@@ -57,11 +56,11 @@
+ 	
+ lab2:	pop	h		; check return address
+ 	mov	a,h
+-	cpi	high lab1
++	cpi	(lab1>>8)
+ 	jz	lab3
+ 	jmp	0
+ lab3:	mov	a,l
+-	cpi	low lab1
++	cpi	(lab1&0ffh)
+ 	jz	lab4
+ 	jmp	0
+ 
+@@ -78,10 +77,10 @@
+ 	push	b
+ 	push	psw
+ 
+-v	defl	0
++v	set	0
+ 	rept	8
+ 	lda	regs2+v/2
+-v	defl	v+2
++v	set	v+2
+ 	cpi	v
+ 	jnz	0
+ 	endm
+@@ -137,50 +136,50 @@
+ ; from now on we can report errors by displaying an address
+ 
+ ; test conditional call, ret, jp, jr
+-tcond	macro	flag,pcond,ncond,rel
+-	lxi	h,&flag
++tcond	macro	flag,cp,cn,rp,rn,jp,jn
++	lxi	h,flag
+ 	push	h
+ 	pop	psw
+-	c&pcond	lab1&pcond
++	cp	$$l1
+ 	jmp	error
+-lab1&pcond:	pop	h
+-	lxi	h,0d7h xor &flag
++$$l1:	pop	h
++	lxi	h,0d7h ! flag
+ 	push	h
+ 	pop	psw
+-	c&ncond	lab2&pcond
++	cn	$$l2
+ 	jmp	error
+-lab2&pcond:	pop	h
+-	lxi	h,lab3&pcond
++$$l2:	pop	h
++	lxi	h,$$l3
+ 	push	h
+-	lxi	h,&flag
++	lxi	h,flag
+ 	push	h
+ 	pop	psw
+-	r&pcond
++	rp
+ 	call	error
+-lab3&pcond:	lxi	h,lab4&pcond
++$$l3:	lxi	h,$$l4
+ 	push	h
+-	lxi	h,0d7h xor &flag
++	lxi	h,0d7h ! flag
+ 	push	h
+ 	pop	psw
+-	r&ncond
++	rn
+ 	call	error
+-lab4&pcond:	lxi	h,&flag
++$$l4:	lxi	h,flag
+ 	push	h
+ 	pop	psw
+-	j&pcond	lab5&pcond
++	jp	$$l5
+ 	call	error
+-lab5&pcond:	lxi	h,0d7h xor &flag
++$$l5:	lxi	h,0d7h ! flag
+ 	push	h
+ 	pop	psw
+-	j&ncond	lab6&pcond
++	jn	$$l6
+ 	call	error
+-lab6&pcond:	
++$$l6:
+ 	endm
+ 
+-	tcond	1,c,nc,1
+-	tcond	4,pe,po,0
+-	tcond	040h,z,nz,1
+-	tcond	080h,m,p,0
++	tcond	1,cc,cnc,rc,rnc,jc,jnc
++	tcond	4,cpe,cpo,rpe,rpo,jpe,jpo
++	tcond	040h,cz,cnz,rz,rnz,jz,jnz
++	tcond	080h,cm,cp,rm,rp,jm,jp
+ 
+ ; test indirect jumps
+ 	lxi	h,lab7
+@@ -222,7 +221,7 @@
+ 	
+ ; display address at top of stack and exit
+ error:	pop	b
+-	mvi	h,high hextab
++	mvi	h,(hextab>>8)
+ 	mov	a,b
+ 	rrc
+ 	rrc
+@@ -270,20 +269,20 @@
+ 	pop	psw
+ 	ret
+ 	
+-v	defl	0
++v	set	0
+ regs1:	rept	8
+-v	defl	v+2
++v	set	v+2
+ 	db	v
+ 	endm
+ 
+-regs2:	ds	8,0
++regs2:	db	8 dup (0)
+ 
+ hlval:	db	0a5h,03ch
+ 
+ ; skip to next page boundary
+ 	org	(($+255)/256)*256
+ hextab:	db	'0123456789abcdef'
+-	ds	240
++	db	240 dup (0)
+ 
+ stack	equ	$
+ 

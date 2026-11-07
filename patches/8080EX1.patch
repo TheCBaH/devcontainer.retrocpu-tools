@@ -1,0 +1,115 @@
+--- a/8080EX1.MAC
++++ b/8080EX1.MAC
+@@ -42,8 +42,7 @@
+ ;
+ ;******************************************************************************
+ 
+-	.8080
+-	aseg
++	cpu	8080
+ 	org	100h
+ 
+ begin:	jmp	start
+@@ -152,25 +151,47 @@
+ 	dw	0
+ 
+ tstr	macro	insn,memop,hliy,hlix,hl,de,bc,flags,acc,sp
+-	local	lab
+-lab:	db	insn
+-	ds	lab+4-$,0
++$$lab:	db	insn
++	db	($$lab+4-$) dup (0)
+ 	dw	memop,hliy,hlix,hl,de,bc
+ 	db	flags
+ 	db	acc
+ 	dw	sp
+-	if	$-lab ne 20
+-	error	'missing parameter'
++	if	($ - $$lab) <> 20
++	error	"missing parameter"
++	endif
++	endm
++
++tstr3	macro	insn1,insn2,insn3,memop,hliy,hlix,hl,de,bc,flags,acc,sp
++$$lab:	db	insn1,insn2,insn3
++	db	($$lab+4-$) dup (0)
++	dw	memop,hliy,hlix,hl,de,bc
++	db	flags
++	db	acc
++	dw	sp
++	if	($ - $$lab) <> 20
++	error	"missing parameter"
++	endif
++	endm
++
++tstr2	macro	insn1,insn2,memop,hliy,hlix,hl,de,bc,flags,acc,sp
++$$lab:	db	insn1,insn2
++	db	($$lab+4-$) dup (0)
++	dw	memop,hliy,hlix,hl,de,bc
++	db	flags
++	db	acc
++	dw	sp
++	if	($ - $$lab) <> 20
++	error	"missing parameter"
+ 	endif
+ 	endm
+ 
+ tmsg	macro	m
+-	local	lab
+-lab:	db	m
+-	if	$ ge lab+30
+-	error	'message too long'
++$$lab:	db	m
++	if	$ >= $$lab+30
++	error	"message too long"
+ 	else
+-	ds	lab+30-$,'.'
++	db	($$lab+30-$) dup ('.')
+ 	endif
+ 	db	'$'
+ 	endm
+@@ -187,7 +208,7 @@
+ alu8i:	db	0ffh		; flag mask
+ 	tstr	0c6h,09140h,07e3ch,07a67h,0df6dh,05b61h,00b29h,010h,066h,085b2h
+ 	tstr	038h,0,0,0,0,0,0,0,-1,0			; (2048 cycles)
+-	tstr	<0,-1>,0,0,0,0,0,0,0d7h,0,0		; (14 cycles)
++	tstr2	0,-1,0,0,0,0,0,0,0d7h,0,0		; (14 cycles)
+ 	db	09eh, 092h, 02fh, 09eh			; expected crc
+ 	tmsg	'aluop nn'
+ 
+@@ -305,7 +326,7 @@
+ 
+ ; ld hl,(nnnn) (16 cycles)
+ ld162:	db	0ffh		; flag mask
+-	tstr	<02ah,low msbt,high msbt>,09863h,07830h,02077h,0b1feh,0b9fah,0abb8h,004h,006h,06015h
++	tstr3	02ah,msbt&0ffh,msbt>>8,09863h,07830h,02077h,0b1feh,0b9fah,0abb8h,004h,006h,06015h
+ 	tstr	0,0,0,0,0,0,0,0,0,0			; (1 cycle)
+ 	tstr	0,-1,0,0,0,0,0,0,0,0			; (16 cycles)
+ 	db	0a9h,0c3h,0d5h,0cbh			; expected crc
+@@ -313,7 +334,7 @@
+ 	
+ ; ld (nnnn),hl (16 cycles)
+ ld166:	db	0ffh		; flag mask
+-	tstr	<022h,low msbt,high msbt>,0d003h,07772h,07f53h,03f72h,064eah,0e180h,010h,02dh,035e9h
++	tstr3	022h,msbt&0ffh,msbt>>8,0d003h,07772h,07f53h,03f72h,064eah,0e180h,010h,02dh,035e9h
+ 	tstr	0,0,0,0,0,0,0,0,0,0			; (1 cycle)
+ 	tstr	0,0,0,0,-1,0,0,0,0,0			; (16 cycles)
+ 	db	0e8h,086h,04fh,026h			; expected crc
+@@ -323,7 +344,7 @@
+ ld16im:	db	0ffh		; flag mask
+ 	tstr	1,05c1ch,02d46h,08eb9h,06078h,074b1h,0b30eh,046h,0d1h,030cch
+ 	tstr	030h,0,0,0,0,0,0,0,0,0			; (4 cycles)
+-	tstr	<0,0ffh,0ffh>,0,0,0,0,0,0,0,0,0		; (16 cycles)
++	tstr3	0,0ffh,0ffh,0,0,0,0,0,0,0,0,0		; (16 cycles)
+ 	db	0fch,0f4h,06eh,012h			; expected crc
+ 	tmsg	'lxi <b,d,h,sp>,nnnn'
+ 
+@@ -353,7 +374,7 @@
+ 
+ ; ld a,(nnnn) / ld (nnnn),a (44 cycles)
+ lda:	db	0ffh		; flag mask
+-	tstr	<032h,low msbt,high msbt>,0fd68h,0f4ech,044a0h,0b543h,00653h,0cdbah,0d2h,04fh,01fd8h
++	tstr3	032h,msbt&0ffh,msbt>>8,0fd68h,0f4ech,044a0h,0b543h,00653h,0cdbah,0d2h,04fh,01fd8h
+ 	tstr	008h,0,0,0,0,0,0,0,0,0			; (2 cycle)
+ 	tstr	0,0ffh,0,0,0,0,0,0d7h,-1,0		; (22 cycles)
+ 	db	0edh,057h,0afh,072h			; expected crc

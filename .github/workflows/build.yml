@@ -1,0 +1,71 @@
+name: build
+on:
+  push:
+    branches: [main, devel]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  devcontainer:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: Development container
+        uses: TheCBaH/devcontainer-action/devcontainer@v1
+        with:
+          cli-version: '0.88.0'
+          post-create: 'false'
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+  tools:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: Build static tools and packages
+        run: make build
+      - name: Test packages (static, licences, Debian and Alpine non-root)
+        run: make test
+      - name: Checksums
+        run: cd dist && sha256sum *.tar.xz > SHA256SUMS-$(uname -m)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages-${{ runner.arch }}
+          path: dist/*
+          if-no-files-found: error
+  compare:
+    needs: tools
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: packages
+      - name: Diagnostics are architecture independent
+        run: |
+          set -e
+          for a in X64 ARM64; do
+            mkdir -p "x/$a"
+            tar -C "x/$a" -xJf packages/packages-$a/retrocpu-diagnostics-*.tar.xz
+            (cd "x/$a/retrocpu-diagnostics" && sha256sum *.COM *.bin *.ini source/*.MAC source/*.asm source/patches/*) > "x/$a.sums"
+          done
+          diff x/X64.sums x/ARM64.sums
+          cat x/X64.sums
