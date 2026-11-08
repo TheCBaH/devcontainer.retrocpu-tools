@@ -36,7 +36,7 @@ for f in mvi-sta-hlt mvi-sta-hlt-wait2; do
     # (the last T-state of the STA fetch shows 00xx), so the masked hand
     # trace still matches; the strict X check of `run` is not applied
     check "icarus: idle data input 00 still matches the hand-written trace" sh -c \
-        "mkdir -p $out/idle00 && ${icarus[*]} +image=$out/icarus/$f.img +ram_start=0 +ram_size=4000 \
+        "mkdir -p $out/idle00 && ${icarus[*]} +image=$out/icarus/$f.run.img +ram_start=0 +ram_size=4000 \
          +stim=$fx/$f.stim +trace=$out/idle00/$f.trace +idle_din=00 >/dev/null \
          && python3 -I scripts/vm80a.py compare $fx/$f.trace $out/idle00/$f.trace"
     check "halt-cycle address is the HLT address 0005 (finding: hand trace says 0006)" \
@@ -70,7 +70,7 @@ check "inta-rst: one INTA cycle; inta-call: three, six T-states longer" sh -c \
      test \$(( \$(sed -n 's/^tstates=//p' $r/inta-call.result) - \$(sed -n 's/^tstates=//p' $r/inta-rst.result) )) = 6"
 check "INTA with no byte left is a fault, not a memory read" sh -c "
     grep -v '^inta' fixtures/inta/inta-rst.stim > $out/no-inta.stim
-    ${icarus[*]} +image=$r/inta-rst.img +ram_start=0 +ram_size=10000 +boot=$out/icarus-io/inta-rst.boot +boot_len=14 +boot_pc=100 \
+    ${icarus[*]} +image=$r/inta-rst.run.img +ram_start=0 +ram_size=10000 +boot=$out/icarus-io/inta-rst.run.boot +boot_len=14 +boot_pc=100 \
         +stim=$out/no-inta.stim +stop_ports=ff +halt_stop=0 +max_tstates=2000 +result=$out/no-inta.result >/dev/null
     grep -q '^stop_reason=fault' $out/no-inta.result && grep -q '^fault=inta ' $out/no-inta.result"
 check "wrong io_out expectation is caught" sh -c \
@@ -104,12 +104,12 @@ check "FST: the accumulator register ends at 2a" sh -c \
 "$fstdump" "$out/fixture.fst" changes i8080_tb.dut.r16_pc > "$out/fixture.pc"
 echo "      (r16_pc changes: $(tr '\n' ',' < "$out/fixture.pc"))"
 check "vm80a_sim_fast has no FST: +fst= is an error" sh -c \
-    "${fast[*]} +image=$out/icarus/mvi-sta-hlt.img +ram_start=0 +ram_size=4000 +fst=$out/x.fst +result=$out/fast-fst.result >/dev/null; grep -q '^error=no FST' $out/fast-fst.result"
+    "${fast[*]} +image=$out/icarus/mvi-sta-hlt.run.img +ram_start=0 +ram_size=4000 +fst=$out/x.fst +result=$out/fast-fst.result >/dev/null; grep -q '^error=no FST' $out/fast-fst.result"
 check "vm80a_sim: +vcd= is an error (the build writes FST)" sh -c \
-    "${verilator[*]} +image=$out/icarus/mvi-sta-hlt.img +ram_start=0 +ram_size=4000 +vcd=$out/x.vcd +result=$out/fst-vcd.result >/dev/null; grep -q '^error=this build writes FST' $out/fst-vcd.result"
+    "${verilator[*]} +image=$out/icarus/mvi-sta-hlt.run.img +ram_start=0 +ram_size=4000 +vcd=$out/x.vcd +result=$out/fst-vcd.result >/dev/null; grep -q '^error=this build writes FST' $out/fst-vcd.result"
 
 echo "== memory dump range and raw bytes"
-img=$out/icarus/mvi-sta-hlt.img
+img=$out/icarus/mvi-sta-hlt.run.img
 dumprun() { "${cmd[@]}" +image="$img" +ram_start=0 +ram_size=4000 +stim=$fx/mvi-sta-hlt.stim +result="$d/r" "$@" > /dev/null; }
 dump_full() { dumprun +memdump="$d/full.hex" +membin="$d/full.bin" \
     && python3 -I scripts/vm80a.py bincheck "$d/full.hex" "$d/full.bin" 0 10000; }

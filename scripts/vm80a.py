@@ -5,6 +5,7 @@
   vm80a.py com <file.COM> <outdir> [--seed N] [--max-tstates N] [--trace] -- <simulator command...>
   vm80a.py args <manifest> <side-dir> <side-ref> <out-ref> [--trace]
   vm80a.py check <manifest> <outdir>
+  vm80a.py com-manifest <file.COM> <out.json>
   vm80a.py compare <expected.trace> <actual.trace>
   vm80a.py bincheck <mem.hex> <file.bin> <start-hex> <size-hex>
 
@@ -88,9 +89,9 @@ def prepare(man, here, side_dir, side_ref, out_ref, trace=True):
     stop = man["stop"]
 
     def side(ext, text):
-        with open(os.path.join(side_dir, f"{mid}.{ext}"), "w", encoding="utf-8") as f:
+        with open(os.path.join(side_dir, f"{mid}.run.{ext}"), "w", encoding="utf-8") as f:
             f.write(text)
-        return f"{side_ref}/{mid}.{ext}"
+        return f"{side_ref}/{mid}.run.{ext}"
 
     def out(ext):
         return f"{out_ref}/{mid}.{ext}"
@@ -233,6 +234,11 @@ def main(argv):
             print(f"MISMATCH binary dump ({len(got)} bytes) differs from hex dump [{start:#x}+{size:#x}]")
             return 1
         print(f"binary dump equals hex dump [{start:#x}+{size:#x}]")
+        return 0
+    if len(argv) == 4 and argv[1] == "com-manifest":
+        # com-manifest <file.COM> <out.json>: K3 manifest of a CP/M .COM under the K5 shim
+        name = os.path.splitext(os.path.basename(argv[2]))[0]
+        json.dump(com_manifest(argv[2], name, 2000000000), open(argv[3], "w"), indent=1)
         return 0
     if len(argv) >= 6 and argv[1] == "args":
         # args <manifest> <side-dir> <side-ref> <out-ref> [--trace]: <side-dir>/<id>.args, one plusarg per line

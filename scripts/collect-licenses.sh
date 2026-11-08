@@ -23,6 +23,9 @@ add() {
     printf '%s\t%s\t%s\t%s\t%s\n' "$comp" "$ver" "$spdx" "$why" "${files# }" >> "$out/.entries"
 }
 
+# notice <source-file> <dest>: the licence comment at the top of a source file.
+notice() { awk 'NR > 1 && /\*\// { exit } { print }' "$1" > "$2"; }
+
 # Copyright lines of the SIMH core and AltairZ80 sources linked into altairz80.
 simh_notices() {
     {
@@ -65,6 +68,18 @@ vm80a-sim)
     add verilator "$(pin verilator)" "LGPL-3.0-only OR Artistic-2.0" \
         "Verilator runtime and generated model code, statically linked" \
         "$src/verilator/LICENSE:COPYING-LGPL-3.0" "$src/verilator/Artistic:Artistic-2.0"
+    g=$src/verilator/include/gtkwave
+    notice "$g/fstapi.c" "$out/.libfst-MIT.txt"
+    notice "$g/lz4.c" "$out/.lz4-BSD-2-Clause.txt"
+    notice "$g/fastlz.c" "$out/.fastlz-MIT.txt"
+    add libfst "bundled in Verilator $(pin verilator)" MIT \
+        "FST writer in vm80a_sim, reader in fstdump (GTKWave libfst, Tony Bybell)" "$out/.libfst-MIT.txt:LICENSE-fstapi.txt"
+    add lz4 "bundled in Verilator include/gtkwave" BSD-2-Clause \
+        "compression in libfst" "$out/.lz4-BSD-2-Clause.txt:LICENSE-lz4.txt"
+    add fastlz "bundled in Verilator include/gtkwave" MIT \
+        "compression in libfst" "$out/.fastlz-MIT.txt:LICENSE-fastlz.txt"
+    add zlib "1.3.1 (Alpine package zlib-static)" Zlib \
+        "compression in libfst, statically linked" "$third/zlib/LICENSE.txt"
     add musl "v$(grep MUSL_VERSION "$root/versions.env" | cut -d= -f2) (Alpine package)" MIT \
         "C library, statically linked" "$third/musl/COPYRIGHT"
     add gcc-runtime "$(grep GCC_RUNTIME_VERSION "$root/versions.env" | cut -d= -f2) (Alpine package)" \
@@ -102,5 +117,5 @@ esac
     echo
     echo "Alpine build image: $(grep ALPINE_IMAGE "$root/versions.env" | cut -d= -f2-)"
 } > "$out/SOURCES.md"
-rm -f "$out/.entries" "$out/.simh-copyrights"
+rm -f "$out/.entries" "$out/.simh-copyrights" "$out"/.libfst-* "$out"/.lz4-* "$out"/.fastlz-*
 ( cd "$out" && find . -type f ! -name SHA256SUMS | sed 's|^\./||' | sort | xargs sha256sum > SHA256SUMS )
