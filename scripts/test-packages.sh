@@ -15,6 +15,14 @@ tar -C "$stage" -xJf "$dist/retrocpu-vm80a-sim-linux-$arch-musl.tar.xz"
 mkdir -p "$stage/exe"
 python3 -I scripts/vm80a.py com-manifest "$stage/retrocpu-diagnostics/8080PRE.COM" "$stage/exe/8080PRE.json"
 python3 -I scripts/vm80a.py args "$stage/exe/8080PRE.json" "$stage/exe" @A@ @O@
+# the small 8080EX1 groups (under 2.5 million T-states each); the whole exerciser takes
+# about 9 billion and runs in the exerciser workflow (scripts/run-8080ex1-groups.sh)
+exgroups="16 17 18 19 20 22 24"
+for g in $exgroups; do
+    python3 -I scripts/exerciser-group.py cut "$stage/retrocpu-diagnostics/8080EX1.COM" "$g" "$stage/exe/g$g.COM"
+    python3 -I scripts/vm80a.py com-manifest "$stage/exe/g$g.COM" "$stage/exe/g$g.json"
+    python3 -I scripts/vm80a.py args "$stage/exe/g$g.json" "$stage/exe" @A@ @O@
+done
 
 echo "== static check (no interpreter, no shared libraries)"
 tar -C "$stage" -cf - . | docker run -i --rm alpine:3.22 sh -c '
@@ -121,5 +129,13 @@ for image in debian:bookworm-slim alpine:3.22; do
                 || { cat "$e/$variant-$seed.txt" 2>/dev/null; echo "FAIL: 8080PRE under $variant seed $seed on $image" >&2; exit 1; }
         done
     done
-    echo "$image: vm80a_sim and vm80a_sim_fast pass (5 fixtures x seeds; traces equal the hand traces under masks, variants equal; FST holds the register set; 8080PRE: $(cat "$e/vm80a_sim-none.txt"), $arch)" | tee -a "$dist/diagnostics-run-$arch.log"
+    for variant in vm80a_sim vm80a_sim_fast; do
+        for g in $exgroups; do
+            r=$e/$variant/seed-none
+            python3 -I scripts/vm80a.py check "$stage/exe/g$g.json" "$r" > /dev/null \
+                && python3 -I -c 'import sys; sys.path.insert(0, "scripts"); import vm80a; t = vm80a.console(sys.argv[1]); sys.exit(0 if b"  OK" in t and b"ERROR" not in t and b"Tests complete" in t else 1)' "$r/g$g.ioout" \
+                || { echo "FAIL: 8080EX1 group $g under $variant on $image" >&2; exit 1; }
+        done
+    done
+    echo "$image: vm80a_sim and vm80a_sim_fast pass (5 fixtures x seeds; traces equal the hand traces under masks, variants equal; FST holds the register set; 8080PRE: $(cat "$e/vm80a_sim-none.txt"); 8080EX1 groups $exgroups OK, $arch)" | tee -a "$dist/diagnostics-run-$arch.log"
 done
