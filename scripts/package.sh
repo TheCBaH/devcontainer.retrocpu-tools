@@ -1,8 +1,8 @@
 #!/bin/sh
 # Packs the built tools and diagnostics with their licences.
-# usage: package.sh <repo-root> <meta-dir> <prefix> <dist> <arch>
+# usage: package.sh <repo-root> <meta-dir> <prefix> <dist> <arch> <vm80a-sim-prefix>
 set -eu
-root=$1 meta=$2 prefix=$3 dist=$4 arch=$5
+root=$1 meta=$2 prefix=$3 dist=$4 arch=$5 sim=$6
 mkdir -p "$dist"
 stage=$(mktemp -d)
 
@@ -22,3 +22,5 @@ cp "$root/patches/"*.patch "$d/source/patches/"
 "$root/scripts/collect-licenses.sh" "$root" "$meta" "$d/licenses" diagnostics
 tar -C "$stage" --sort=name --owner=0 --group=0 --numeric-owner -cf - retrocpu-diagnostics \
     | xz -9e > "$dist/retrocpu-diagnostics-$arch.tar.xz"
+
+"$root/scripts/package-vm80a-sim.sh" "$root" "$meta" "$dist" "$arch" "$sim" "$stage"

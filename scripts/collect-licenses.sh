@@ -1,6 +1,6 @@
 #!/bin/sh
 # Collects the licence files that apply to a binary package.
-# usage: collect-licenses.sh <repo-root> <meta-dir> <outdir> tools|diagnostics
+# usage: collect-licenses.sh <repo-root> <meta-dir> <outdir> tools|diagnostics|vm80a-sim
 # <meta-dir>/pins.txt has lines "<sha> <path> <subject>" (from the host).
 set -eu
 root=$1 meta=$2 out=$3 kind=$4
@@ -57,6 +57,20 @@ diagnostics)
     add i8080-core "$(pin i8080-core)" "GPL-2.0-or-later" \
         "source of 8080PRE.MAC and 8080EX1.MAC (Cringle, Bartholomew, Demin)" \
         "$src/i8080-core/LICENSE" "$src/asl-releases/COPYING:COPYING-GPL-2.0"
+    ;;
+vm80a-sim)
+    add vm80a "$(pin vm80a)" "CC-BY-3.0" \
+        "vm80a_core, compiled unmodified into vm80a_sim (attribution required)" \
+        "$src/vm80a/license.md:CC-BY-3.0.md" "$third/vm80a/NOTICE.txt"
+    add verilator "$(pin verilator)" "LGPL-3.0-only OR Artistic-2.0" \
+        "Verilator runtime and generated model code, statically linked" \
+        "$src/verilator/LICENSE:COPYING-LGPL-3.0" "$src/verilator/Artistic:Artistic-2.0"
+    add musl "v$(grep MUSL_VERSION "$root/versions.env" | cut -d= -f2) (Alpine package)" MIT \
+        "C library, statically linked" "$third/musl/COPYRIGHT"
+    add gcc-runtime "$(grep GCC_RUNTIME_VERSION "$root/versions.env" | cut -d= -f2) (Alpine package)" \
+        "GPL-3.0-or-later WITH GCC-exception-3.1" \
+        "libgcc/libstdc++ runtime pieces, statically linked" \
+        "$third/gcc-runtime/COPYING3" "$third/gcc-runtime/COPYING.RUNTIME"
     ;;
 *) echo "unknown kind $kind" >&2; exit 2 ;;
 esac

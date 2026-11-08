@@ -34,7 +34,7 @@ jobs:
           mkdir dist
           find artifacts -type f -exec mv -t dist {} +
           for arch in x86_64 aarch64; do
-            for f in retrocpu-tools-linux-$arch-musl.tar.xz retrocpu-diagnostics-$arch.tar.xz diagnostics-run-$arch.log; do
+            for f in retrocpu-tools-linux-$arch-musl.tar.xz retrocpu-diagnostics-$arch.tar.xz retrocpu-vm80a-sim-linux-$arch-musl.tar.xz diagnostics-run-$arch.log; do
               test -f "dist/$f" || { echo "Missing $f" >&2; exit 1; }
             done
           done
@@ -47,4 +47,4 @@ jobs:
           flags=
           case $GITHUB_REF_NAME in *-*) flags=--prerelease ;; esac
           gh release create "$GITHUB_REF_NAME" * $flags --verify-tag --title "$GITHUB_REF_NAME" \
-            --notes 'Static musl altairz80 (SIMH), asl, p2bin, p2hex and the 8080PRE/8080EX1 diagnostics assembled with them, for x86_64 and aarch64. Built from the pinned sources, run offline on Debian and Alpine as non-root. Each archive carries its licences; SHA256SUMS covers all assets.'
+            --notes 'Static musl altairz80 (SIMH), asl, p2bin, p2hex, the 8080PRE/8080EX1 diagnostics assembled with them, and vm80a_sim (Verilator model of the KR580VM80A, CC BY 3.0 vm80a), for x86_64 and aarch64. Built from the pinned sources, run offline on Debian and Alpine as non-root. Each archive carries its licences; SHA256SUMS covers all assets.'

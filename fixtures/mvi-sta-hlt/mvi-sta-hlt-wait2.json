@@ -1,0 +1,64 @@
+{
+  "format": "i8080-exec-manifest/1",
+  "id": "mvi-sta-hlt-wait2",
+  "profile": "i8080a/1",
+  "image": {
+    "origin": "0x0000",
+    "hex": "3e2a32002076",
+    "sha256": "990ab98149e7036d06a383dbdacd1d88d49c947e4b430982fedcb7640d1abe01"
+  },
+  "memory": {
+    "fill": "0x00",
+    "regions": [
+      {
+        "start": "0x0000",
+        "size": "0x4000",
+        "kind": "ram"
+      }
+    ]
+  },
+  "initial": {
+    "pc": "0x0000",
+    "sp": "0x0000",
+    "a": "0x00",
+    "b": "0x00",
+    "c": "0x00",
+    "d": "0x00",
+    "e": "0x00",
+    "h": "0x00",
+    "l": "0x00",
+    "f": "0x02",
+    "inte": 0
+  },
+  "io": {
+    "in": {},
+    "in_default": "0xff"
+  },
+  "shim": null,
+  "stimulus": "mvi-sta-hlt-wait2.stim",
+  "stop": {
+    "on_hlt": true,
+    "ports": [],
+    "max_instructions": 1000,
+    "max_tstates": 100000
+  },
+  "expect": {
+    "stop_reason": "hlt",
+    "pc": "0x0006",
+    "sp": "0x0000",
+    "a": "0x2a",
+    "b": "0x00",
+    "c": "0x00",
+    "d": "0x00",
+    "e": "0x00",
+    "h": "0x00",
+    "l": "0x00",
+    "f": "0x02",
+    "inte": 0,
+    "halted": true,
+    "instructions": 3,
+    "tstates": 29,
+    "memory_sha256": "7e60a9484efefb5eebc82a12439ebbbebba80048faf9f9cd7ba196e9a11de430",
+    "io_out": []
+  }
+}

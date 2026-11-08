@@ -32,12 +32,33 @@ host with Docker.
 * Codespace: [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=1449628527)
   opens the devcontainer on `main`; `make submodule` runs on creation.
 
+## vm80a reference harness
+
+`hdl/vm80a/` wraps the `vm80a_core` model of the KR580VM80A (submodule
+`sources/vm80a`, CC BY 3.0, see `hdl/vm80a/README.md`) in a file-driven pin
+trace harness for Icarus Verilog and Verilator.
+
+```sh
+make vm80a-submodule   # fetch sources/vm80a only
+make vm80a-test        # MVI/STA/HLT without waits and with two waits on the STA write
+```
+
+The test needs `iverilog`, `verilator` and `python3`, all in the devcontainer
+image; it also runs in CI on both architectures.
+
+`make build` also builds the static `vm80a_sim` from the pinned Verilator
+(`sources/verilator`, built from source in Alpine). Its compile cache,
+`.cache/ccache`, is restored and saved with the GitHub Actions cache, so CI
+rebuilds only what changed. `make test` runs the packaged binary on Debian and
+Alpine as non-root.
+
 ## Packages
 
 | Archive | Contents |
 | --- | --- |
 | `retrocpu-tools-linux-<arch>-musl.tar.xz` | `bin/{altairz80,asl,p2bin,p2hex}`, `licenses/` |
 | `retrocpu-diagnostics-<arch>.tar.xz` | `8080PRE.COM`, `8080EX1.COM`, K5 shim bytes, SIMH scripts, `source/`, `licenses/` |
+| `retrocpu-vm80a-sim-linux-<arch>-musl.tar.xz` | `bin/vm80a_sim` (static Verilator model of vm80a_core with the harness), `source/` (harness, unmodified `vm80a.v`), `fixtures/`, `manifest.json`, `licenses/` |
 
 `licenses/` in each archive holds the licence texts of every component that
 is linked in or was used to produce it (SIMH, AS, musl, the GCC runtime
