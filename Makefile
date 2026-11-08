@@ -14,8 +14,14 @@ meta: submodule
 	git -c safe.directory='*' rev-parse HEAD > .cache/meta/commit
 
 # Static tools, diagnostics and packages in dist/ (built in Alpine/musl)
+# .cache/ccache seeds the Verilator compile cache (GitHub Actions cache in CI)
+# and is refreshed from the same build, whose layers the second call reuses.
+CCACHE_DIR = .cache/ccache
 build: meta
-	$(DOCKER_BUILD) --build-context meta=.cache/meta --target dist --output type=local,dest=dist .
+	mkdir -p $(CCACHE_DIR)
+	$(DOCKER_BUILD) --build-context meta=.cache/meta --build-context ccache=$(CCACHE_DIR) --target dist --output type=local,dest=dist .
+	$(DOCKER_BUILD) --build-context meta=.cache/meta --build-context ccache=$(CCACHE_DIR) --target ccache-out --output type=local,dest=$(CCACHE_DIR).new .
+	rm -rf $(CCACHE_DIR) && mv $(CCACHE_DIR).new $(CCACHE_DIR)
 
 test: build
 	scripts/test-packages.sh dist

@@ -41,6 +41,13 @@ for f in mvi-sta-hlt mvi-sta-hlt-wait2; do
         grep -q '^halt_a=0005$' "$out/icarus/$f.result"
 done
 
+echo "== packaged fixture image"
+check "mvi-sta-hlt.hex holds the manifest image bytes" python3 -I -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+h = bytes.fromhex("".join(open(sys.argv[2]).read().split()))
+sys.exit(0 if h.hex() == m["image"]["hex"] else "hex file differs from the manifest")' $fx/mvi-sta-hlt.json $fx/mvi-sta-hlt.hex
+
 echo "== VCD"
 for sim in icarus verilator; do
     if [ $sim = icarus ]; then cmd=("${icarus[@]}"); else cmd=("${verilator[@]}"); fi

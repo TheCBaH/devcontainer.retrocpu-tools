@@ -52,8 +52,20 @@ jobs:
         with:
           submodules: false
           persist-credentials: false
+      - name: Restore ccache
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/ccache
+          key: ccache-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.arch }}-
       - name: Build static tools and packages
         run: make build
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .cache/ccache
+          key: ccache-${{ runner.arch }}-${{ github.sha }}
       - name: Test packages (static, licences, Debian and Alpine non-root)
         run: make test
       - name: Checksums

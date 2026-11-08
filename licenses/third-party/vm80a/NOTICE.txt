@@ -1,0 +1,13 @@
+vm80a
+=====
+
+The vm80a_sim binary contains a simulation model compiled from vm80a
+(org/rtl/vm80a.v), copyright (c) 2014-2018 by 1801BM1,
+https://github.com/1801BM1/vm80a, licensed under Creative Commons
+Attribution 3.0 (CC BY 3.0, https://creativecommons.org/licenses/by/3.0/;
+full text in CC-BY-3.0.md).
+
+The model is derived from the reverse-engineered die of the KR580VM80A and is
+used unmodified (source/vm80a.v is the file at the revision listed in
+LICENSES.md and manifest.json). The testbench around it (source/harness.v)
+is part of retrocpu-tools and is under its licence.

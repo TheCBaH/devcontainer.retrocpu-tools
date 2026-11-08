@@ -11,8 +11,9 @@ files, so changing them needs no rebuild.
 
 vm80a is copyright (c) 2014-2018 by 1801BM1 and licensed under
 [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/) (`sources/vm80a/license.md`).
-It is used unmodified and is not part of any release archive; any binary
-that embeds it (a future `vm80a_sim`) must carry this notice. The harness
+It is used unmodified. The release archive `retrocpu-vm80a-sim-linux-<arch>-musl.tar.xz`
+embeds it in `vm80a_sim` and carries this notice, the licence text and the
+unmodified `vm80a.v`. The harness
 is under this repository's licence. The vm80a `memini.bin` image is not used
 (it bundles TST8080).
 
