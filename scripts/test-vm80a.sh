@@ -10,6 +10,8 @@ out=$b/results
 vm80a() { python3 -I scripts/vm80a.py "$@"; }
 icarus=(vvp "$b/icarus/tb.vvp")
 verilator=("$b/verilator/vm80a_sim")
+fast=("$b/verilator/vm80a_sim_fast")
+fstdump=$b/fstdump
 failed=0
 check() { # description, command...
     local what=$1; shift
@@ -34,12 +36,49 @@ for f in mvi-sta-hlt mvi-sta-hlt-wait2; do
     # (the last T-state of the STA fetch shows 00xx), so the masked hand
     # trace still matches; the strict X check of `run` is not applied
     check "icarus: idle data input 00 still matches the hand-written trace" sh -c \
-        "mkdir -p $out/idle00 && ${icarus[*]} +image=$out/icarus/$f.img +ram_start=0 +ram_size=4000 \
+        "mkdir -p $out/idle00 && ${icarus[*]} +image=$out/icarus/$f.run.img +ram_start=0 +ram_size=4000 \
          +stim=$fx/$f.stim +trace=$out/idle00/$f.trace +idle_din=00 >/dev/null \
          && python3 -I scripts/vm80a.py compare $fx/$f.trace $out/idle00/$f.trace"
     check "halt-cycle address is the HLT address 0005 (finding: hand trace says 0006)" \
         grep -q '^halt_a=0005$' "$out/icarus/$f.result"
 done
+
+echo "== bus cycles by status: IN/OUT with the K5 shim console, INTA (RST and CALL)"
+for f in io-console:io-console inta:inta-rst inta:inta-call; do
+    dir=${f%%:*} id=${f##*:}
+    m=fixtures/$dir/$id.json
+    check "icarus $id: result matches manifest (io_out, instructions, memory digest)" vm80a run $m "$out/icarus-io" -- "${icarus[@]}"
+    for seed in none 1 2; do
+        if [ "$seed" = none ]; then s=(); else s=(--seed "$seed"); fi
+        check "verilator $id seed $seed: result matches manifest" vm80a run $m "$out/verilator-io-$seed" "${s[@]}" -- "${verilator[@]}"
+        for ext in trace mem ioout; do
+            check "verilator $id seed $seed: $ext identical to icarus" cmp "$out/icarus-io/$id.$ext" "$out/verilator-io-$seed/$id.$ext"
+        done
+        check "vm80a_sim_fast $id seed $seed: result matches manifest" vm80a run $m "$out/fast-io-$seed" "${s[@]}" -- "${fast[@]}"
+        for ext in trace mem ioout; do
+            check "vm80a_sim_fast $id seed $seed: $ext identical to icarus" cmp "$out/icarus-io/$id.$ext" "$out/fast-io-$seed/$id.$ext"
+        done
+    done
+done
+r=$out/icarus-io
+check "io-console: 6 OUTs and 3 INs reach the port table, 5 memory writes only (an OUT never writes memory)" sh -c \
+    "grep -qx 'outputs=6' $r/io-console.result && grep -qx 'inputs=3' $r/io-console.result && grep -qx 'writes=5' $r/io-console.result && grep -qx 'port_dup_errors=0' $r/io-console.result"
+check "io-console: the console text on port 01 is HIB" sh -c \
+    "test \"\$(python3 -I -c 'import sys; print(\"\".join(chr(int(l.split()[1],16)) for l in open(sys.argv[1]) if l.split()[0]==\"01\"))' $r/io-console.ioout)\" = HIB"
+check "inta-rst: one INTA cycle; inta-call: three, six T-states longer" sh -c \
+    "grep -qx 'intas=1' $r/inta-rst.result && grep -qx 'intas=3' $r/inta-call.result && \
+     test \$(( \$(sed -n 's/^tstates=//p' $r/inta-call.result) - \$(sed -n 's/^tstates=//p' $r/inta-rst.result) )) = 6"
+check "INTA with no byte left is a fault, not a memory read" sh -c "
+    grep -v '^inta' fixtures/inta/inta-rst.stim > $out/no-inta.stim
+    ${icarus[*]} +image=$r/inta-rst.run.img +ram_start=0 +ram_size=10000 +boot=$out/icarus-io/inta-rst.run.boot +boot_len=14 +boot_pc=100 \
+        +stim=$out/no-inta.stim +stop_ports=ff +halt_stop=0 +max_tstates=2000 +result=$out/no-inta.result >/dev/null
+    grep -q '^stop_reason=fault' $out/no-inta.result && grep -q '^fault=inta ' $out/no-inta.result"
+check "wrong io_out expectation is caught" sh -c \
+    "sed 's/\"0x31\", \"0x55\"/\"0x31\", \"0x56\"/' fixtures/inta/inta-rst.json > $out/bad-io.json && ! python3 -I scripts/vm80a.py run $out/bad-io.json $out/bad-io -- ${icarus[*]}"
+check "the built-in shim equals the K5 bytes (0000, 0005, FE00)" sh -c "
+    ${icarus[*]} +shim=1 +ram_start=0 +ram_size=10000 +memdump=$out/shim.mem +max_tstates=200 >/dev/null
+    python3 -I -c 'import sys; m=bytes.fromhex(\"\".join(open(sys.argv[1]).read().split())); h=\"79fe02ca0efefe09ca12fed3fec97bd301c91afe24c8d30113c312fe\"
+sys.exit(0 if m[0:3].hex()==\"d3ff76\" and m[5:8].hex()==\"c300fe\" and m[0xfe00:0xfe00+28].hex()==h and not any(m[8:0xfe00]) else \"shim bytes differ\")' $out/shim.mem"
 
 echo "== packaged fixture image"
 check "mvi-sta-hlt.hex holds the manifest image bytes" python3 -I -c '
@@ -48,15 +87,29 @@ m = json.load(open(sys.argv[1]))
 h = bytes.fromhex("".join(open(sys.argv[2]).read().split()))
 sys.exit(0 if h.hex() == m["image"]["hex"] else "hex file differs from the manifest")' $fx/mvi-sta-hlt.json $fx/mvi-sta-hlt.hex
 
-echo "== VCD"
-for sim in icarus verilator; do
-    if [ $sim = icarus ]; then cmd=("${icarus[@]}"); else cmd=("${verilator[@]}"); fi
-    VM80A_EXTRA="+vcd=$out/$sim.vcd" check "$sim: VCD written with signals and time" \
-        sh -c "python3 -I scripts/vm80a.py run $fx/mvi-sta-hlt.json $out/vcd-$sim -- ${cmd[*]} && grep -q '^\$enddefinitions' $out/$sim.vcd && grep -q '^#' $out/$sim.vcd"
+echo "== VCD (Icarus), FST (vm80a_sim) and the register set"
+VM80A_EXTRA="+vcd=$out/icarus.vcd" check "icarus: VCD written with signals and time" \
+    sh -c "python3 -I scripts/vm80a.py run $fx/mvi-sta-hlt.json $out/vcd-icarus -- ${icarus[*]} && grep -q '^\$enddefinitions' $out/icarus.vcd && grep -q '^#' $out/icarus.vcd"
+VM80A_EXTRA="+fst=$out/fixture.fst" check "vm80a_sim: FST written" \
+    sh -c "python3 -I scripts/vm80a.py run $fx/mvi-sta-hlt.json $out/fst-run -- ${verilator[*]} && test -s $out/fixture.fst"
+regs="acc:8 r16_bc:16 r16_de:16 r16_hl:16 r16_sp:16 r16_pc:16 r16_wz:16 psw_z:1 psw_s:1 psw_p:1 psw_c:1 psw_ac:1"
+"$fstdump" "$out/fixture.fst" vars > "$out/fixture.vars"
+for rw in $regs; do
+    check "FST holds i8080_tb.dut.${rw%%:*} with width ${rw##*:}" grep -qx "i8080_tb.dut.${rw%%:*} ${rw##*:}" "$out/fixture.vars"
 done
+check "FST holds the pins (i8080_tb.pin_a, pin_sync, pin_dbin, pin_wr_n)" sh -c \
+    "for p in pin_a pin_sync pin_dbin pin_wr_n; do grep -q \"^i8080_tb.\$p \" $out/fixture.vars || exit 1; done"
+check "FST: the accumulator register ends at 2a" sh -c \
+    "test \"\$($fstdump $out/fixture.fst final i8080_tb.dut.acc)\" = 'i8080_tb.dut.acc 2a'"
+"$fstdump" "$out/fixture.fst" changes i8080_tb.dut.r16_pc > "$out/fixture.pc"
+echo "      (r16_pc changes: $(tr '\n' ',' < "$out/fixture.pc"))"
+check "vm80a_sim_fast has no FST: +fst= is an error" sh -c \
+    "${fast[*]} +image=$out/icarus/mvi-sta-hlt.run.img +ram_start=0 +ram_size=4000 +fst=$out/x.fst +result=$out/fast-fst.result >/dev/null; grep -q '^error=no FST' $out/fast-fst.result"
+check "vm80a_sim: +vcd= is an error (the build writes FST)" sh -c \
+    "${verilator[*]} +image=$out/icarus/mvi-sta-hlt.run.img +ram_start=0 +ram_size=4000 +vcd=$out/x.vcd +result=$out/fst-vcd.result >/dev/null; grep -q '^error=this build writes FST' $out/fst-vcd.result"
 
 echo "== memory dump range and raw bytes"
-img=$out/icarus/mvi-sta-hlt.img
+img=$out/icarus/mvi-sta-hlt.run.img
 dumprun() { "${cmd[@]}" +image="$img" +ram_start=0 +ram_size=4000 +stim=$fx/mvi-sta-hlt.stim +result="$d/r" "$@" > /dev/null; }
 dump_full() { dumprun +memdump="$d/full.hex" +membin="$d/full.bin" \
     && python3 -I scripts/vm80a.py bincheck "$d/full.hex" "$d/full.bin" 0 10000; }

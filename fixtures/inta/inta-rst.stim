@@ -1,0 +1,6 @@
+# i8080-stimulus v1
+# INT while halted at m4+3, dropped in the INTA cycle (inta-rst); anchors count from the first fetch at pc
+reset 0 @4
+inta e7
+int 1 @m4+3
+int 0 @m5+1

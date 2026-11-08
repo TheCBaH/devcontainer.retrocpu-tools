@@ -1,0 +1,14 @@
+`verilator_config
+// Registers kept (not optimised away) in the FST of vm80a_sim; see README.md.
+public_flat_rd -module "vm80a_core" -var "acc"
+public_flat_rd -module "vm80a_core" -var "r16_bc"
+public_flat_rd -module "vm80a_core" -var "r16_de"
+public_flat_rd -module "vm80a_core" -var "r16_hl"
+public_flat_rd -module "vm80a_core" -var "r16_sp"
+public_flat_rd -module "vm80a_core" -var "r16_pc"
+public_flat_rd -module "vm80a_core" -var "r16_wz"
+public_flat_rd -module "vm80a_core" -var "psw_z"
+public_flat_rd -module "vm80a_core" -var "psw_s"
+public_flat_rd -module "vm80a_core" -var "psw_p"
+public_flat_rd -module "vm80a_core" -var "psw_c"
+public_flat_rd -module "vm80a_core" -var "psw_ac"

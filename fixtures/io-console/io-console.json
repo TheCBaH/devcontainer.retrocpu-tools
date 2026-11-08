@@ -1,0 +1,96 @@
+{
+  "format": "i8080-exec-manifest/1",
+  "id": "io-console",
+  "profile": "i8080a/1",
+  "image": {
+    "origin": "0x0100",
+    "hex": "0e09112001cd0500db10d320db105f0e02cd0500db30320030d320c300000000484924",
+    "sha256": "1916c4abf1ecbfc415ea9bb2906d9311f8a6ce13d19fa709db7892e9af0990e7"
+  },
+  "memory": {
+    "fill": "0x00",
+    "regions": [
+      {
+        "start": "0x0000",
+        "size": "0x10000",
+        "kind": "ram"
+      }
+    ]
+  },
+  "initial": {
+    "pc": "0x0100",
+    "sp": "0xfe00",
+    "a": "0x00",
+    "b": "0x00",
+    "c": "0x00",
+    "d": "0x00",
+    "e": "0x00",
+    "h": "0x00",
+    "l": "0x00",
+    "f": "0x02",
+    "inte": 0
+  },
+  "io": {
+    "in": {
+      "0x10": [
+        "0x41",
+        "0x42"
+      ]
+    },
+    "in_default": "0xaa"
+  },
+  "shim": "cpm/1",
+  "stimulus": null,
+  "stop": {
+    "on_hlt": true,
+    "ports": [
+      "0xff"
+    ],
+    "max_instructions": 1000,
+    "max_tstates": 100000
+  },
+  "expect": {
+    "stop_reason": "port",
+    "pc": "0x0002",
+    "sp": "0xfe00",
+    "a": "0xaa",
+    "b": "0x00",
+    "c": "0x02",
+    "d": "0x01",
+    "e": "0x42",
+    "h": "0x00",
+    "l": "0x00",
+    "f": "0x02",
+    "inte": 0,
+    "halted": false,
+    "instructions": 42,
+    "tstates": 365,
+    "memory_sha256": "4240e2020970a29fc95f846ba844ca240afb95a8863d48fadf25532377c334f8",
+    "io_out": [
+      [
+        "0x01",
+        "0x48"
+      ],
+      [
+        "0x01",
+        "0x49"
+      ],
+      [
+        "0x20",
+        "0x41"
+      ],
+      [
+        "0x01",
+        "0x42"
+      ],
+      [
+        "0x20",
+        "0xaa"
+      ],
+      [
+        "0xff",
+        "0xaa"
+      ]
+    ]
+  }
+}

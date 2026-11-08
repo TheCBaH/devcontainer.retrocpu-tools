@@ -11,6 +11,11 @@ tar -C "$stage" -xJf "$dist/retrocpu-diagnostics-$arch.tar.xz"
 tar -C "$stage" -xJf "$dist/retrocpu-vm80a-sim-linux-$arch-musl.tar.xz"
 
 
+# argument files for 8080PRE under the K5 shim (the packaged runner reads them in the containers)
+mkdir -p "$stage/exe"
+python3 -I scripts/vm80a.py com-manifest "$stage/retrocpu-diagnostics/8080PRE.COM" "$stage/exe/8080PRE.json"
+python3 -I scripts/vm80a.py args "$stage/exe/8080PRE.json" "$stage/exe" @A@ @O@
+
 echo "== static check (no interpreter, no shared libraries)"
 tar -C "$stage" -cf - . | docker run -i --rm alpine:3.22 sh -c '
     apk add --no-cache binutils file >/dev/null
@@ -35,7 +40,7 @@ for need in simh/LICENSE.txt asl/COPYING-GPL-2.0 musl/COPYRIGHT gcc-runtime/COPY
     [ -s "$stage/retrocpu-tools-$arch/licenses/$need" ] || { echo "missing licence $need" >&2; exit 1; }
 done
 
-for need in vm80a/CC-BY-3.0.md vm80a/NOTICE.txt verilator/COPYING-LGPL-3.0 verilator/Artistic-2.0 musl/COPYRIGHT gcc-runtime/COPYING.RUNTIME; do
+for need in vm80a/CC-BY-3.0.md vm80a/NOTICE.txt verilator/COPYING-LGPL-3.0 verilator/Artistic-2.0 libfst/LICENSE-fstapi.txt lz4/LICENSE-lz4.txt fastlz/LICENSE-fastlz.txt zlib/LICENSE.txt musl/COPYRIGHT gcc-runtime/COPYING.RUNTIME; do
     [ -s "$stage/retrocpu-vm80a-sim-$arch/licenses/$need" ] || { echo "missing licence $need" >&2; exit 1; }
 done
 cmp "$stage/retrocpu-vm80a-sim-$arch/source/vm80a.v" sources/vm80a/org/rtl/vm80a.v \
@@ -70,29 +75,51 @@ for image in debian:bookworm-slim alpine:3.22; do
     done
 done
 
-echo "== vm80a_sim as non-root, read-only root fs"
+echo "== vm80a_sim and vm80a_sim_fast as non-root, read-only root fs"
 sim=/p/retrocpu-vm80a-sim-$arch
+regs="acc:8 r16_bc:16 r16_de:16 r16_hl:16 r16_sp:16 r16_pc:16 r16_wz:16 psw_z:1 psw_s:1 psw_p:1 psw_c:1 psw_ac:1"
 for image in debian:bookworm-slim alpine:3.22; do
     tag=${image%%:*}
     run "$image" $sim/run-vm80a-fixtures.sh $sim /o/vm80a-$tag
-    docker run --rm -v "$out:/o" alpine:3.22 tar -C /o -cf - vm80a-$tag | tar -C "$stage" -xf -
+    run "$image" $sim/run-vm80a-fixtures.sh $sim /o/exe-$tag /p/exe "none 1"
+    run "$image" sh -c "for v in vm80a_sim; do $sim/bin/fstdump /o/vm80a-$tag/\$v/seed-none/mvi-sta-hlt.fst vars > /o/vm80a-$tag/fst.vars; $sim/bin/fstdump /o/vm80a-$tag/\$v/seed-none/mvi-sta-hlt.fst final i8080_tb.dut.acc > /o/vm80a-$tag/fst.acc; done"
+    docker run --rm -v "$out:/o" alpine:3.22 tar -C /o -cf - vm80a-$tag exe-$tag | tar -C "$stage" -xf -
     d=$stage/vm80a-$tag
-    for f in mvi-sta-hlt mvi-sta-hlt-wait2; do
-        case $f in mvi-sta-hlt) ts=27 ;; *) ts=29 ;; esac
-        for seed in none 1 2 3 4 5; do
-            r=$d/seed-$seed/$f
-            grep -qx 'stop_reason=hlt' "$r.result" && grep -qx "tstates=$ts" "$r.result" \
-                && grep -qx 'instructions=3' "$r.result" && grep -qx 'x_samples=0' "$r.result" \
-                && grep -qx 'writes=1' "$r.result" && grep -qx 'write=2000 2a' "$r.result" \
-                || { cat "$r.result"; echo "FAIL: vm80a_sim $f seed $seed on $image" >&2; exit 1; }
-            python3 -I scripts/vm80a.py compare "fixtures/mvi-sta-hlt/$f.trace" "$r.trace" \
-                || { echo "FAIL: vm80a_sim $f seed $seed trace on $image" >&2; exit 1; }
-            cmp "$r.trace" "$d/seed-none/$f.trace" && cmp "$r.mem" "$d/seed-none/$f.mem" \
-                || { echo "FAIL: vm80a_sim $f seed $seed differs from the unseeded run on $image" >&2; exit 1; }
+    for f in mvi-sta-hlt mvi-sta-hlt-wait2 io-console inta-rst inta-call; do
+        m=fixtures/*/$f.json
+        for variant in vm80a_sim vm80a_sim_fast; do
+            for seed in none 1 2 3 4 5; do
+                r=$d/$variant/seed-$seed
+                [ -e "$r/$f.result" ] || continue
+                python3 -I scripts/vm80a.py check $m "$r" > /dev/null \
+                    || { python3 -I scripts/vm80a.py check $m "$r"; echo "FAIL: $variant $f seed $seed on $image" >&2; exit 1; }
+                case $f in mvi-*)
+                    python3 -I scripts/vm80a.py compare "fixtures/mvi-sta-hlt/$f.trace" "$r/$f.trace" >/dev/null \
+                        || { echo "FAIL: $variant $f seed $seed trace on $image" >&2; exit 1; } ;;
+                esac
+                for ext in trace mem ioout result; do
+                    cmp "$r/$f.$ext" "$d/vm80a_sim/seed-none/$f.$ext" \
+                        || { echo "FAIL: $variant $f seed $seed $ext differs from vm80a_sim unseeded on $image" >&2; exit 1; }
+                done
+            done
         done
-        sha=$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(bytes.fromhex("".join(open(sys.argv[1]).read().split()))).hexdigest())' "$d/seed-none/$f.mem")
-        [ "$sha" = 7e60a9484efefb5eebc82a12439ebbbebba80048faf9f9cd7ba196e9a11de430 ] \
-            || { echo "FAIL: vm80a_sim $f memory digest $sha on $image" >&2; exit 1; }
     done
-    echo "$image: vm80a_sim pass (2 fixtures x 6 seeds, traces equal the hand traces under masks, $arch)" | tee -a "$dist/diagnostics-run-$arch.log"
+    sha=$(python3 -I -c 'import hashlib,sys; print(hashlib.sha256(bytes.fromhex("".join(open(sys.argv[1]).read().split()))).hexdigest())' "$d/vm80a_sim/seed-none/mvi-sta-hlt.mem")
+    [ "$sha" = 7e60a9484efefb5eebc82a12439ebbbebba80048faf9f9cd7ba196e9a11de430 ] \
+        || { echo "FAIL: vm80a_sim memory digest $sha on $image" >&2; exit 1; }
+    for rw in $regs; do
+        grep -qx "i8080_tb.dut.${rw%%:*} ${rw##*:}" "$d/fst.vars" \
+            || { echo "FAIL: FST on $image lacks i8080_tb.dut.${rw%%:*}" >&2; exit 1; }
+    done
+    grep -qx 'i8080_tb.dut.acc 2a' "$d/fst.acc" || { cat "$d/fst.acc"; echo "FAIL: FST acc on $image" >&2; exit 1; }
+    e=$stage/exe-$tag
+    for variant in vm80a_sim vm80a_sim_fast; do
+        for seed in none 1; do
+            python3 -I scripts/vm80a.py check "$stage/exe/8080PRE.json" "$e/$variant/seed-$seed" > /dev/null \
+                && python3 -I -c 'import sys; sys.path.insert(0, "scripts"); import vm80a; t = vm80a.console(sys.argv[1]); print(t.decode("latin-1").strip()); sys.exit(0 if b"8080 Preliminary tests complete" in t else 1)' \
+                    "$e/$variant/seed-$seed/8080PRE.ioout" > "$e/$variant-$seed.txt" \
+                || { cat "$e/$variant-$seed.txt" 2>/dev/null; echo "FAIL: 8080PRE under $variant seed $seed on $image" >&2; exit 1; }
+        done
+    done
+    echo "$image: vm80a_sim and vm80a_sim_fast pass (5 fixtures x seeds; traces equal the hand traces under masks, variants equal; FST holds the register set; 8080PRE: $(cat "$e/vm80a_sim-none.txt"), $arch)" | tee -a "$dist/diagnostics-run-$arch.log"
 done
