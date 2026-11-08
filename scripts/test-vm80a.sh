@@ -41,6 +41,39 @@ for f in mvi-sta-hlt mvi-sta-hlt-wait2; do
         grep -q '^halt_a=0005$' "$out/icarus/$f.result"
 done
 
+echo "== bus cycles by status: IN/OUT with the K5 shim console, INTA (RST and CALL)"
+for f in io-console:io-console inta:inta-rst inta:inta-call; do
+    dir=${f%%:*} id=${f##*:}
+    m=fixtures/$dir/$id.json
+    check "icarus $id: result matches manifest (io_out, instructions, memory digest)" vm80a run $m "$out/icarus-io" -- "${icarus[@]}"
+    for seed in none 1 2; do
+        if [ "$seed" = none ]; then s=(); else s=(--seed "$seed"); fi
+        check "verilator $id seed $seed: result matches manifest" vm80a run $m "$out/verilator-io-$seed" "${s[@]}" -- "${verilator[@]}"
+        for ext in trace mem ioout; do
+            check "verilator $id seed $seed: $ext identical to icarus" cmp "$out/icarus-io/$id.$ext" "$out/verilator-io-$seed/$id.$ext"
+        done
+    done
+done
+r=$out/icarus-io
+check "io-console: 6 OUTs and 3 INs reach the port table, 5 memory writes only (an OUT never writes memory)" sh -c \
+    "grep -qx 'outputs=6' $r/io-console.result && grep -qx 'inputs=3' $r/io-console.result && grep -qx 'writes=5' $r/io-console.result && grep -qx 'port_dup_errors=0' $r/io-console.result"
+check "io-console: the console text on port 01 is HIB" sh -c \
+    "test \"\$(python3 -I -c 'import sys; print(\"\".join(chr(int(l.split()[1],16)) for l in open(sys.argv[1]) if l.split()[0]==\"01\"))' $r/io-console.ioout)\" = HIB"
+check "inta-rst: one INTA cycle; inta-call: three, six T-states longer" sh -c \
+    "grep -qx 'intas=1' $r/inta-rst.result && grep -qx 'intas=3' $r/inta-call.result && \
+     test \$(( \$(sed -n 's/^tstates=//p' $r/inta-call.result) - \$(sed -n 's/^tstates=//p' $r/inta-rst.result) )) = 6"
+check "INTA with no byte left is a fault, not a memory read" sh -c "
+    grep -v '^inta' fixtures/inta/inta-rst.stim > $out/no-inta.stim
+    ${icarus[*]} +image=$r/inta-rst.img +ram_start=0 +ram_size=10000 +boot=$out/icarus-io/inta-rst.boot +boot_len=14 +boot_pc=100 \
+        +stim=$out/no-inta.stim +stop_ports=ff +halt_stop=0 +max_tstates=2000 +result=$out/no-inta.result >/dev/null
+    grep -q '^stop_reason=fault' $out/no-inta.result && grep -q '^fault=inta ' $out/no-inta.result"
+check "wrong io_out expectation is caught" sh -c \
+    "sed 's/\"0x31\", \"0x55\"/\"0x31\", \"0x56\"/' fixtures/inta/inta-rst.json > $out/bad-io.json && ! python3 -I scripts/vm80a.py run $out/bad-io.json $out/bad-io -- ${icarus[*]}"
+check "the built-in shim equals the K5 bytes (0000, 0005, FE00)" sh -c "
+    ${icarus[*]} +shim=1 +ram_start=0 +ram_size=10000 +memdump=$out/shim.mem +max_tstates=200 >/dev/null
+    python3 -I -c 'import sys; m=bytes.fromhex(\"\".join(open(sys.argv[1]).read().split())); h=\"79fe02ca0efefe09ca12fed3fec97bd301c91afe24c8d30113c312fe\"
+sys.exit(0 if m[0:3].hex()==\"d3ff76\" and m[5:8].hex()==\"c300fe\" and m[0xfe00:0xfe00+28].hex()==h and not any(m[8:0xfe00]) else \"shim bytes differ\")' $out/shim.mem"
+
 echo "== packaged fixture image"
 check "mvi-sta-hlt.hex holds the manifest image bytes" python3 -I -c '
 import json, sys

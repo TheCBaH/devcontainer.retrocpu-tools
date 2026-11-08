@@ -35,12 +35,24 @@ pin traces with the `~` masks of the expected file.
 | `+image=<file>` `+origin=<hex>` | Hex bytes, loaded at the origin |
 | `+fill=<hex>` | Initial byte of all memory (default `00`) |
 | `+ram_start= +ram_size= +rom_start= +rom_size=` | Hex regions; an access outside them, or a write to ROM, is a fault |
-| `+stim=<file>` | `i8080-stimulus v1` schedule (default: reset released at sample 4). `reset`, `ready`, `hold`, `int` with absolute or `m<c>+<k>` times; `io` and `inta` are rejected |
+| `+stim=<file>` | `i8080-stimulus v1` schedule (default: reset released at sample 4). `reset`, `ready`, `hold`, `int` with absolute or `m<c>+<k>` times; `io <port> <byte>...` (hex, successive `IN` from the port) and `inta <byte>...` (hex, successive INTA cycles) |
+| `+in_default=<hex>` | Byte returned by `IN` when a port has no bytes left (default `ff`) |
+| `+io_out=<file>` | One `port value` hex line per `OUT` |
+| `+stop_ports=<hex,..>` `+halt_stop=0` | Stop after the `OUT` to a listed port (`stop_reason=port`); `halt_stop=0` keeps running in the halt cycle |
+| `+shim=1` | K5 CP/M shim: `0000` `OUT FF`/`HLT`, `0005` `JMP FE00`, handler at `FE00` |
+| `+boot=<file> +boot_len=<hex> +boot_pc=<hex>` | Preamble bytes run from `0000` until the first instruction fetch at `boot_pc`; the bytes they overlay are restored then. Trace, `n`, cycle anchors, instructions and T-states start at that fetch |
 | `+max_tstates=<dec>` `+tail=<dec>` | Sample budget; samples recorded after the first halted T-state (default 2) |
 | `+idle_din=<hex>` | Byte on the data input when nothing is read (default `ff`, a pulled-up bus as in `tb80a`) |
 | `+memdump=<file>` `+membin=<file>` | Memory after the run: one hex byte per line, or raw bytes (NUL bytes kept). Bytes outside the regions are `00` |
 | `+dump_start=<hex>` `+dump_size=<hex>` | Range written by both (default the whole 64 KiB); beyond 64 KiB is an error |
 | `+trace= +result= +vcd=` | `i8080-pin-trace v1` file; key=value result; VCD |
+
+Bus cycles are classified by the status byte at `SYNC`: `IN` (`42`), `OUT`
+(`10`) and INTA cycles (`23`, `2b`, and `02`, see below) never touch memory;
+a store to a port goes to the `OUT` log. `scripts/vm80a.py run` turns the K3
+manifest's `io.in`, `shim`, `stop.ports` and `initial` into these plusargs; a
+pin-level run can set `pc`, `sp`, `a`..`l` (flags clear, `f=0x02`) through the
+preamble and nothing else.
 
 One T-state is two `pin_clk` rising edges (`f1` then `f2`); the sample is
 taken `#1` after the second. The harness drives `vm80a_core`, not the
@@ -59,3 +71,11 @@ data of the sample before.
   X; at sample 1 or 0 the core never starts.
 * With an idle data input of `00` instead of `ff`, `A` in the last T-state of
   the STA fetch is `00xx`: a masked byte, so the trace still matches.
+* Interrupt acknowledge: the first INTA cycle has status `23` (`2b` when it ends a
+  halt). The second and third cycles of an interrupt-supplied `CALL` show
+  status `02` (no `MEMR`, no INTA bit) with `DBIN`: the harness gives them the
+  next `inta` bytes. The K2 status table has no `02`. A `CALL` through INTA takes
+  six T-states more than an `RST` (88 against 82 in `fixtures/inta`).
+* The address bus shows an unloaded register (X) in the last T-state of the
+  first `LXI`; the boot preamble runs unrecorded for this reason, and X is not
+  counted before it ends.

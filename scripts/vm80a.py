@@ -17,7 +17,7 @@ import subprocess
 import sys
 
 FIELDS = "n a do di sync dbin wr_n wait hlda inte ready hold int reset".split()
-OBSERVABLE = ["stop_reason", "halted", "instructions", "tstates", "memory_sha256", "io_out"]
+OBSERVABLE = ["fault", "stop_reason", "halted", "instructions", "tstates", "memory_sha256", "io_out"]
 
 
 def hexint(s):
@@ -75,20 +75,18 @@ def run(manifest_path, outdir, sim, seed):
     img = bytes.fromhex(man["image"]["hex"])
     if hashlib.sha256(img).hexdigest() != man["image"]["sha256"]:
         raise SystemExit(f"{mid}: image sha256 does not match the manifest")
-    if man.get("shim") is not None or any(man["io"]["in"]):
-        raise SystemExit(f"{mid}: shim and io inputs are not supported by this harness yet")
+    if man.get("shim") not in (None, "cpm/1"):
+        raise SystemExit(f"{mid}: unknown shim {man['shim']!r}")
     regions = man["memory"]["regions"]
     ram = [r for r in regions if r["kind"] == "ram"]
     rom = [r for r in regions if r["kind"] == "rom"]
     if len(ram) > 1 or len(rom) > 1 or len(ram) + len(rom) != len(regions):
         raise SystemExit(f"{mid}: at most one ram and one rom region")
     stop = man["stop"]
-    if not stop["on_hlt"] or stop["ports"]:
-        raise SystemExit(f"{mid}: only stop.on_hlt is supported")
     hexfile = os.path.join(outdir, mid + ".img")
     with open(hexfile, "w") as f:
         f.write("\n".join("%02x" % b for b in img) + "\n")
-    out = {k: os.path.join(outdir, f"{mid}.{k}") for k in ("trace", "result", "mem")}
+    out = {k: os.path.join(outdir, f"{mid}.{k}") for k in ("trace", "result", "mem", "ioout", "stim")}
     args = [
         f"+image={hexfile}", f"+origin={hexint(man['image']['origin']):x}",
         f"+fill={hexint(man['memory']['fill']):x}",
@@ -99,10 +97,43 @@ def run(manifest_path, outdir, sim, seed):
         args += [f"+ram_start={hexint(ram[0]['start']):x}", f"+ram_size={hexint(ram[0]['size']):x}"]
     if rom:
         args += [f"+rom_start={hexint(rom[0]['start']):x}", f"+rom_size={hexint(rom[0]['size']):x}"]
+    # K4: io/inta statements of the schedule override the manifest's io.in
+    stim = []
     if man.get("stimulus"):
-        args.append("+stim=" + os.path.join(here, man["stimulus"]))
-    if seed is not None:
-        args += ["+verilator+rand+reset+2", f"+verilator+seed+{seed}"]
+        stim += open(os.path.join(here, man["stimulus"]), encoding="utf-8").read().splitlines()
+    for port, vals in man["io"]["in"].items():
+        stim.append("io %x %s" % (hexint(port), " ".join("%x" % hexint(v) for v in vals)))
+    if stim:
+        stim_text = "\n".join(stim) + "\n"
+        if not man.get("stimulus"):
+            stim_text = "# i8080-stimulus v1\nreset 0 @4\n" + stim_text
+        with open(out["stim"], "w", encoding="utf-8") as f:
+            f.write(stim_text)
+        args.append("+stim=" + out["stim"])
+    args.append("+io_out=" + out["ioout"])
+    if man["io"].get("in_default") is not None:
+        args.append("+in_default=%x" % hexint(man["io"]["in_default"]))
+    if stop["ports"]:
+        args.append("+stop_ports=" + ",".join("%x" % hexint(q) for q in stop["ports"]))
+    if not stop["on_hlt"]:
+        args.append("+halt_stop=0")
+    if man.get("shim"):
+        args.append("+shim=1")
+    # Pins cannot set registers: a preamble at 0000 loads SP, BC, DE, HL and A
+    # (flags clear, f=0x02) and jumps to pc; the harness restores the bytes it overlays.
+    init = man.get("initial", {})
+    regs = {k: hexint(init.get(k, 0)) for k in "pc sp a b c d e h l f".split()}
+    regs["f"] = regs["f"] or 2
+    if any(v for k, v in regs.items() if k != "f") or regs["f"] != 2:
+        if regs["f"] != 2 or init.get("inte", 0):
+            raise SystemExit(f"{mid}: a pin-level run supports f=0x02 and inte=0 only")
+        pre = bytes([0x31, regs["sp"] & 255, regs["sp"] >> 8,
+                     0x01, regs["c"], regs["b"], 0x11, regs["e"], regs["d"], 0x21, regs["l"], regs["h"],
+                     0x3e, 0x01, 0xb7, 0x3e, regs["a"], 0xc3, regs["pc"] & 255, regs["pc"] >> 8])
+        bootfile = os.path.join(outdir, mid + ".boot")
+        with open(bootfile, "w") as f:
+            f.write("\n".join("%02x" % b for b in pre) + "\n")
+        args += [f"+boot={bootfile}", "+boot_len=%x" % len(pre), "+boot_pc=%x" % regs["pc"]]
     args += [a for a in os.environ.get("VM80A_EXTRA", "").split() if a]
     subprocess.run(sim + args, check=True, stdout=subprocess.DEVNULL)
 
@@ -118,11 +149,17 @@ def run(manifest_path, outdir, sim, seed):
         "instructions": int(res["instructions"]),
         "tstates": int(res["tstates"]),
         "memory_sha256": hashlib.sha256(mem).hexdigest(),
-        "io_out": [],
+        "io_out": [["0x%02x" % int(a, 16), "0x%02x" % int(b, 16)]
+                   for a, b in (l.split() for l in open(out["ioout"]) if l.strip())],
     }
+    if res.get("fault"):
+        kind, _, addr = res["fault"].rpartition(" ")
+        final["fault"] = {"kind": kind, "addr": "0x" + addr}
     result = {"format": "i8080-exec-result/1", "id": mid, "runner": "vm80a_core harness", **final,
               "pre_sync": int(res["pre_sync"]), "x_samples": int(res["x_samples"]),
-              "writes": res["wlist"]}
+              "writes": res["wlist"], "inputs": int(res["inputs"]), "intas": int(res["intas"])}
+    if res.get("port_dup_errors", "0") != "0":
+        raise SystemExit(f"{mid}: OUT/IN port not duplicated on A15-8 ({res['port_dup_errors']})")
     json.dump(result, open(os.path.join(outdir, mid + ".result.json"), "w"), indent=2)
     bad = []
     for k in OBSERVABLE:
@@ -136,8 +173,8 @@ def run(manifest_path, outdir, sim, seed):
             break
     if bad:
         raise SystemExit(f"{mid}: " + "; ".join(bad))
-    print(f"{mid}: result ok ({final['tstates']} T-states, {result['pre_sync']} pre-sync, "
-          f"writes {res['wlist']})")
+    print(f"{mid}: result ok ({final['tstates']} T-states, {final['instructions']} instructions, "
+          f"{result['pre_sync']} pre-sync, writes {res['wlist']}, io_out {len(final['io_out'])})")
 
 
 def main(argv):
