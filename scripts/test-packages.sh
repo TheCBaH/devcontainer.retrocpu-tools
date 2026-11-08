@@ -44,10 +44,10 @@ docker volume create "$out" >/dev/null
 trap 'docker volume rm -f "$vol" "$out" >/dev/null' EXIT
 tar -C "$stage" -cf - . | docker run -i --rm -v "$vol:/p" alpine:3.22 sh -c 'tar -xf - -C /p && chmod -R a+rX /p'
 docker run --rm -v "$out:/o" alpine:3.22 chmod 777 /o
-: > "$dist/diagnostics-run.log"
+: > "$dist/diagnostics-run-$arch.log"
 run() { docker run --rm --user 1000:1000 --read-only --tmpfs /tmp:exec,mode=1777 -v "$vol:/p:ro" -v "$out:/o" "$@"; }
 for image in debian:bookworm-slim alpine:3.22; do
-    run "$image" /p/retrocpu-diagnostics/check-shim.sh /p "$arch" | tee -a "$dist/diagnostics-run.log"
+    run "$image" /p/retrocpu-diagnostics/check-shim.sh /p "$arch" | tee -a "$dist/diagnostics-run-$arch.log"
     for name in 8080PRE 8080EX1; do
         start=$(date +%s)
         run -w /p/retrocpu-diagnostics "$image" sh -c \
@@ -59,6 +59,6 @@ for image in debian:bookworm-slim alpine:3.22; do
         8080EX1) [ "$(grep -c '  OK' "$stage/$name.out")" = 25 ] \
                  && grep -q 'Tests complete' "$stage/$name.out" && ! grep -q ERROR "$stage/$name.out" ;;
         esac || { cat "$stage/$name.out"; echo "FAIL: $name on $image" >&2; exit 1; }
-        echo "$image: $name pass in ${secs}s (wall clock incl. container start, $arch)" | tee -a "$dist/diagnostics-run.log"
+        echo "$image: $name pass in ${secs}s (wall clock incl. container start, $arch)" | tee -a "$dist/diagnostics-run-$arch.log"
     done
 done

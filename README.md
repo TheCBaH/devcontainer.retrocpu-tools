@@ -66,3 +66,11 @@ SIMH has no exit-code port: the run ends at the shim's `HLT` after
 `OUT 0xFF`; the pass decision comes from the console text only.
 
 Measured durations are recorded in `docs/timing.md`.
+
+## Release
+
+Push a `v*` tag on a commit whose `build` run (push event) succeeded; the
+`release` workflow downloads that run's packages for both architectures,
+writes one `SHA256SUMS` and creates the GitHub release. It fails if the
+commit has no successful build. A tag containing `-` (`v0.1.0-rc1`) is
+published as a pre-release.
