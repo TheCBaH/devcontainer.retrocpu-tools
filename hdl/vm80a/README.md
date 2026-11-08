@@ -60,6 +60,33 @@ taken `#1` after the second. The harness drives `vm80a_core`, not the
 A write is taken at the first sample with `WR̄` low, using the address and
 data of the sample before.
 
+## Waveforms and the register set
+
+`vm80a_sim` (Verilator `--trace-fst`, `-DVM80A_FST`) writes an FST with `+fst=<file>`; `vm80a_sim_fast`
+has no waveform code and rejects `+fst`. In an FST build `+vcd=` is an error; the Icarus build writes VCD
+with `+vcd=`. The FST holds the bench pins (`i8080_tb.pin_*`) and `vm80a_core` as `i8080_tb.dut.*`; harness
+bookkeeping is not traced. These internal registers are kept by `trace.vlt` (`public_flat_rd`) and are
+checked by the tests; every other `vm80a_core` signal is in the file too, but only these are promised:
+
+| Path (under `i8080_tb.dut.`) | Width | Meaning |
+| --- | --- | --- |
+| `acc` | 8 | accumulator `A` |
+| `r16_bc`, `r16_de`, `r16_hl` | 16 | register pairs |
+| `r16_sp`, `r16_pc` | 16 | stack pointer, program counter |
+| `r16_wz` | 16 | internal temporary pair |
+| `psw_z`, `psw_s`, `psw_p`, `psw_c`, `psw_ac` | 1 | flags Z, S, P, CY, AC |
+
+Verilator writes variable names with their range (`acc [7:0]`); `bin/fstdump <file.fst> vars` prints
+`path width` per variable, `final <path>...` the last value and `changes <path>` every change with its time
+(picoseconds; one T-state takes 14 ns in the harness).
+
+## Exercisers
+
+`scripts/vm80a.py com <8080PRE.COM> <outdir> -- <vm80a_sim>` runs a CP/M `.COM` under the K5 shim: `+shim=1`
+and a preamble that sets `SP=0xfe00` and jumps to `0x0100`. The console is the `OUT 0x01` log
+(`<name>.console`). `scripts/exerciser-group.py cut` makes a `.COM` that runs one `8080EX1` group, and
+`scripts/run-8080ex1-groups.sh` runs all 25 in parallel.
+
 ## Observed with the fixtures
 
 * The hand-written MVI/STA/HLT traces (no waits, two waits on the STA write)

@@ -11,6 +11,9 @@ sub-projects.
 | `altairz80` (Open SIMH) | `sources/simh` | X11-style, `sources/simh/LICENSE.txt` |
 | `asl`, `p2bin`, `p2hex` (Macroassembler AS) | `sources/asl-releases` (branch `upstream`) | GPL-2.0-only OR GPL-3.0-only |
 | `8080PRE`, `8080EX1` exercisers | `sources/i8080-core/asm` | GPL-2.0+ (Cringle, Bartholomew) |
+| `vm80a_sim`, `vm80a_sim_fast` (Verilator model of `vm80a_core` plus this repository's harness) | `sources/vm80a` (KR580VM80A model), `sources/verilator` (v5.032, build-time) | CC BY 3.0 (model), LGPL-3.0-only OR Artistic-2.0 (Verilator, build-time only) |
+| `fstdump` (FST reader from Verilator's bundled libfst, lz4, fastlz, zlib) | `sources/verilator` | MIT, BSD-2-Clause, Zlib |
+| musl libc and the GCC runtime library (statically linked) | Alpine toolchain | MIT, GPL-3.0-or-later with the GCC runtime library exception |
 
 Only clearly redistributable components are used: no TST8080, no CPUTEST.
 The `.COM` files in `sources/i8080-core/assets` serve only as an
@@ -40,11 +43,19 @@ trace harness for Icarus Verilog and Verilator.
 
 ```sh
 make vm80a-submodule   # fetch sources/vm80a only
-make vm80a-test        # MVI/STA/HLT without waits and with two waits on the STA write
+make vm80a-test        # MVI/STA/HLT (no waits, two waits), IN/OUT with the K5 shim, INTA, FST
 ```
 
 The test needs `iverilog`, `verilator` and `python3`, all in the devcontainer
 image; it also runs in CI on both architectures.
+
+`vm80a_sim` and `vm80a_sim_fast` run the same harness; the first writes FST
+(`+fst=file`, see `hdl/vm80a/README.md` for the register set kept in it), the
+second has no waveform code. With no waveform requested both run at the same speed (about 2.2 million T-states per second on aarch64), so the second only saves size. The 8080 exercisers
+run under them through the K5 shim: `8080PRE` in seconds, `8080EX1` (about
+9 billion T-states) as 25 groups in parallel with
+`scripts/run-8080ex1-groups.sh`, or in the `exerciser` workflow (dispatch).
+`docs/timing.md` has the numbers.
 
 `make build` also builds the static `vm80a_sim` from the pinned Verilator
 (`sources/verilator`, built from source in Alpine). Its compile cache,
@@ -58,7 +69,7 @@ Alpine as non-root.
 | --- | --- |
 | `retrocpu-tools-linux-<arch>-musl.tar.xz` | `bin/{altairz80,asl,p2bin,p2hex}`, `licenses/` |
 | `retrocpu-diagnostics-<arch>.tar.xz` | `8080PRE.COM`, `8080EX1.COM`, K5 shim bytes, SIMH scripts, `source/`, `licenses/` |
-| `retrocpu-vm80a-sim-linux-<arch>-musl.tar.xz` | `bin/vm80a_sim` (static Verilator model of vm80a_core with the harness), `source/` (harness, unmodified `vm80a.v`), `fixtures/`, `manifest.json`, `licenses/` |
+| `retrocpu-vm80a-sim-linux-<arch>-musl.tar.xz` | `bin/vm80a_sim` (static Verilator model of vm80a_core with the harness, FST output), `bin/vm80a_sim_fast` (same, no waveforms, faster), `bin/fstdump` (FST reader), `source/` (harness, unmodified `vm80a.v`, `trace.vlt`), `fixtures/` (with `*.args` for `run-vm80a-fixtures.sh`), `manifest.json`, `licenses/` |
 
 `licenses/` in each archive holds the licence texts of every component that
 is linked in or was used to produce it (SIMH, AS, musl, the GCC runtime
