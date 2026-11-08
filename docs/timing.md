@@ -27,9 +27,8 @@ The K5 shim and the same `.COM` files, run under the packaged static `vm80a_sim_
 | `8080EX1`, 24 of 25 groups in parallel (6 jobs) | 3,646,465,567 | 448,752,601 | group 0 (the largest of these) 527 s |
 | `8080EX1` group 2, `aluop <b,c,d,e,h,l,m,a>` | 20,156,886,476 | 2,470,296,714 | about 2.5 h; 85% of the exerciser |
 
-Throughput is 2.15 to 2.27 million T-states per second per process (about 0.5 ms of simulated
-8080 time per second at the 2 MHz of the real part, a 4000 times slowdown), with or without
-FST support compiled in. `-O3` raised it from 1.44 M/s (Verilator's default `-Os`). The
+Throughput is 2.15 to 2.27 million T-states per second per process, about the speed of a
+2 MHz 8080 (a Radio-86RK runs at 1.78 MHz), with or without FST support compiled in. `-O3` raised it from 1.44 M/s (Verilator's default `-Os`). The
 console text of the whole run equals `altairz80`'s once the line terminators are mapped (the
 shim prints LF CR, SIMH's terminal turns it into LF LF): 25 groups `OK`, then `Tests complete`.
 
