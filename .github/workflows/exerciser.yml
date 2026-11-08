@@ -1,0 +1,55 @@
+name: exerciser
+# The whole 8080EX1 (about 9 billion T-states) under the packaged vm80a_sim_fast,
+# one process per group. Dispatch it on a commit whose build.yml run succeeded.
+on:
+  workflow_dispatch:
+    inputs:
+      run:
+        description: 'build.yml run id with the packages (default: the successful run for this commit)'
+        required: false
+permissions:
+  actions: read
+  contents: read
+jobs:
+  groups:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: false
+          persist-credentials: false
+      - name: Packages of the build run
+        run: |
+          run='${{ inputs.run }}'
+          if test -z "$run"; then
+            run=$(gh run list --workflow build.yml --event push --commit "$GITHUB_SHA" \
+              --status success --limit 1 --json databaseId --jq '.[0].databaseId')
+          fi
+          test -n "$run" || { echo "No successful build run for $GITHUB_SHA" >&2; exit 1; }
+          echo "Packages of build run $run"
+          gh run download "$run" -p "packages-${{ runner.arch }}" -D artifacts
+          mkdir pkg
+          for f in artifacts/*/retrocpu-vm80a-sim-*.tar.xz artifacts/*/retrocpu-diagnostics-*.tar.xz; do
+            tar -C pkg -xJf "$f"
+          done
+      - name: 8080EX1, 25 groups in parallel
+        run: |
+          arch=$(uname -m)
+          scripts/run-8080ex1-groups.sh pkg/retrocpu-vm80a-sim-$arch/bin/vm80a_sim_fast \
+            pkg/retrocpu-diagnostics/8080EX1.COM out "$(nproc)" | tee out.log
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: 8080ex1-${{ runner.arch }}
+          path: |
+            out.log
+            out/groups.txt
+            out/*.console
