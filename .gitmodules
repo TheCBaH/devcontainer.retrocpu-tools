@@ -8,3 +8,6 @@
 	path = sources/asl-releases
 	url = https://github.com/Macroassembler-AS/asl-releases.git
 	branch = upstream
+[submodule "sources/vm80a"]
+	path = sources/vm80a
+	url = https://github.com/1801BM1/vm80a.git

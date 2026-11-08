@@ -32,6 +32,20 @@ host with Docker.
 * Codespace: [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=1449628527)
   opens the devcontainer on `main`; `make submodule` runs on creation.
 
+## vm80a reference harness
+
+`hdl/vm80a/` wraps the `vm80a_core` model of the KR580VM80A (submodule
+`sources/vm80a`, CC BY 3.0, see `hdl/vm80a/README.md`) in a file-driven pin
+trace harness for Icarus Verilog and Verilator.
+
+```sh
+make vm80a-submodule   # fetch sources/vm80a only
+make vm80a-test        # MVI/STA/HLT without waits and with two waits on the STA write
+```
+
+The test needs `iverilog`, `verilator` and `python3`, all in the devcontainer
+image; it also runs in CI on both architectures.
+
 ## Packages
 
 | Archive | Contents |

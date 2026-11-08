@@ -1,0 +1,4 @@
+# i8080-stimulus v1
+reset 0 @4
+ready 0 @m5+1
+ready 1 @m5+3

@@ -1,0 +1,36 @@
+# i8080-pin-trace v1
+# source=hand profile=i8080a/1 pre_sync=*
+# a=~~~~ from n=26 (halt cycle, all later rows): the hand reading shows the address after HLT (0006),
+# vm80a_core shows the HLT address (0005). Open: settle against the 8080 manual, not the model.
+# n a do di sync dbin wr_n wait hlda inte ready hold int reset
+0  0000 a2 zz 1 0 1 0 0 0 1 0 0 0   # MVI A    M1 fetch T1
+1  0000 zz 3e 0 1 1 0 0 0 1 0 0 0   #          T2
+2  0000 zz 3e 0 0 1 0 0 0 1 0 0 0   #          T3
+3  ~~~~ zz zz 0 0 1 0 0 0 1 0 0 0   #          T4
+4  0001 82 zz 1 0 1 0 0 0 1 0 0 0   #          M2 read operand T1
+5  0001 zz 2a 0 1 1 0 0 0 1 0 0 0   #          T2
+6  ~~~~ zz 2a 0 0 1 0 0 0 1 0 0 0   #          T3
+7  0002 a2 zz 1 0 1 0 0 0 1 0 0 0   # STA      M1 fetch T1
+8  0002 zz 32 0 1 1 0 0 0 1 0 0 0   #          T2
+9  0002 zz 32 0 0 1 0 0 0 1 0 0 0   #          T3
+10 ~~~~ zz zz 0 0 1 0 0 0 1 0 0 0   #          T4
+11 0003 82 zz 1 0 1 0 0 0 1 0 0 0   #          M2 address low T1
+12 0003 zz 00 0 1 1 0 0 0 1 0 0 0   #          T2
+13 ~~~~ zz 00 0 0 1 0 0 0 1 0 0 0   #          T3
+14 0004 82 zz 1 0 1 0 0 0 1 0 0 0   #          M3 address high T1
+15 0004 zz 20 0 1 1 0 0 0 1 0 0 0   #          T2
+16 ~~~~ zz 20 0 0 1 0 0 0 1 0 0 0   #          T3
+17 2000 00 zz 1 0 1 0 0 0 1 0 0 0   # M4 write T1
+18 2000 2a zz 0 0 1 0 0 0 0 0 0 0   # T2, READY low sampled
+19 2000 2a zz 0 0 0 1 0 0 0 0 0 0   # Tw1, WR low, WAIT high, READY low sampled
+20 2000 2a zz 0 0 0 1 0 0 1 0 0 0   # Tw2, READY high sampled
+21 ~~~~ 2a zz 0 0 0 0 0 0 1 0 0 0   # T3
+22 0005 a2 zz 1 0 1 0 0 0 1 0 0 0   # HLT      M1 fetch T1
+23 0005 zz 76 0 1 1 0 0 0 1 0 0 0   #          T2
+24 0005 zz 76 0 0 1 0 0 0 1 0 0 0   #          T3
+25 ~~~~ zz zz 0 0 1 0 0 0 1 0 0 0   #          T4
+26 ~~~~ 8a zz 1 0 1 0 0 0 1 0 0 0   #          halt cycle T1 (status 8a)
+27 ~~~~ zz zz 0 0 1 0 0 0 1 0 0 0   #          T2 (no DBIN)
+28 ~~~~ zz zz 0 0 1 1 0 0 1 0 0 0   #          TWH, 29th counted T-state
+29 ~~~~ zz zz 0 0 1 1 0 0 1 0 0 0   #          TWH (halted, not counted)
+30 ~~~~ zz zz 0 0 1 1 0 0 1 0 0 0   #          TWH (halted, not counted)

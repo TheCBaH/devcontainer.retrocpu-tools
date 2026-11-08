@@ -23,12 +23,23 @@ jobs:
           submodules: false
           persist-credentials: false
       - name: Development container
+        id: container
         uses: TheCBaH/devcontainer-action/devcontainer@v1
         with:
           cli-version: '0.88.0'
           post-create: 'false'
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: vm80a source
+        run: make vm80a-submodule
+      - name: vm80a harness (Icarus Verilog, Verilator)
+        run: ${{ steps.container.outputs.exec }} make vm80a-test
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: vm80a-results-${{ runner.arch }}
+          path: build/vm80a/results/
+          if-no-files-found: ignore
   tools:
     strategy:
       fail-fast: false
