@@ -2,6 +2,9 @@
 """Drive the vm80a pin-level harness from a K3 manifest and compare K4 traces.
 
   vm80a.py run <manifest.json> <outdir> [--seed N] -- <simulator command...>
+  vm80a.py com <file.COM> <outdir> [--seed N] [--max-tstates N] [--trace] -- <simulator command...>
+  vm80a.py args <manifest> <side-dir> <side-ref> <out-ref> [--trace]
+  vm80a.py check <manifest> <outdir>
   vm80a.py compare <expected.trace> <actual.trace>
   vm80a.py bincheck <mem.hex> <file.bin> <start-hex> <size-hex>
 
@@ -67,11 +70,11 @@ def parse_result(path):
     return res
 
 
-def run(manifest_path, outdir, sim, seed):
-    man = json.load(open(manifest_path, encoding="utf-8"))
-    here = os.path.dirname(os.path.abspath(manifest_path))
+def prepare(man, here, side_dir, side_ref, out_ref, trace=True):
+    """Plusargs for a manifest. Side files (image, preamble, schedule) are
+    written to side_dir and named by side_ref; results by out_ref."""
     mid = man["id"]
-    os.makedirs(outdir, exist_ok=True)
+    os.makedirs(side_dir, exist_ok=True)
     img = bytes.fromhex(man["image"]["hex"])
     if hashlib.sha256(img).hexdigest() != man["image"]["sha256"]:
         raise SystemExit(f"{mid}: image sha256 does not match the manifest")
@@ -83,16 +86,23 @@ def run(manifest_path, outdir, sim, seed):
     if len(ram) > 1 or len(rom) > 1 or len(ram) + len(rom) != len(regions):
         raise SystemExit(f"{mid}: at most one ram and one rom region")
     stop = man["stop"]
-    hexfile = os.path.join(outdir, mid + ".img")
-    with open(hexfile, "w") as f:
-        f.write("\n".join("%02x" % b for b in img) + "\n")
-    out = {k: os.path.join(outdir, f"{mid}.{k}") for k in ("trace", "result", "mem", "ioout", "stim")}
+
+    def side(ext, text):
+        with open(os.path.join(side_dir, f"{mid}.{ext}"), "w", encoding="utf-8") as f:
+            f.write(text)
+        return f"{side_ref}/{mid}.{ext}"
+
+    def out(ext):
+        return f"{out_ref}/{mid}.{ext}"
+
     args = [
-        f"+image={hexfile}", f"+origin={hexint(man['image']['origin']):x}",
-        f"+fill={hexint(man['memory']['fill']):x}",
+        "+image=" + side("img", "\n".join("%02x" % b for b in img) + "\n"),
+        f"+origin={hexint(man['image']['origin']):x}", f"+fill={hexint(man['memory']['fill']):x}",
         f"+max_tstates={stop['max_tstates']}",
-        f"+trace={out['trace']}", f"+result={out['result']}", f"+memdump={out['mem']}",
+        f"+result={out('result')}", f"+memdump={out('mem')}", f"+io_out={out('ioout')}",
     ]
+    if trace:
+        args.append(f"+trace={out('trace')}")
     if ram:
         args += [f"+ram_start={hexint(ram[0]['start']):x}", f"+ram_size={hexint(ram[0]['size']):x}"]
     if rom:
@@ -104,13 +114,10 @@ def run(manifest_path, outdir, sim, seed):
     for port, vals in man["io"]["in"].items():
         stim.append("io %x %s" % (hexint(port), " ".join("%x" % hexint(v) for v in vals)))
     if stim:
-        stim_text = "\n".join(stim) + "\n"
+        text = "\n".join(stim) + "\n"
         if not man.get("stimulus"):
-            stim_text = "# i8080-stimulus v1\nreset 0 @4\n" + stim_text
-        with open(out["stim"], "w", encoding="utf-8") as f:
-            f.write(stim_text)
-        args.append("+stim=" + out["stim"])
-    args.append("+io_out=" + out["ioout"])
+            text = "# i8080-stimulus v1\nreset 0 @4\n" + text
+        args.append("+stim=" + side("stim", text))
     if man["io"].get("in_default") is not None:
         args.append("+in_default=%x" % hexint(man["io"]["in_default"]))
     if stop["ports"]:
@@ -130,13 +137,15 @@ def run(manifest_path, outdir, sim, seed):
         pre = bytes([0x31, regs["sp"] & 255, regs["sp"] >> 8,
                      0x01, regs["c"], regs["b"], 0x11, regs["e"], regs["d"], 0x21, regs["l"], regs["h"],
                      0x3e, 0x01, 0xb7, 0x3e, regs["a"], 0xc3, regs["pc"] & 255, regs["pc"] >> 8])
-        bootfile = os.path.join(outdir, mid + ".boot")
-        with open(bootfile, "w") as f:
-            f.write("\n".join("%02x" % b for b in pre) + "\n")
-        args += [f"+boot={bootfile}", "+boot_len=%x" % len(pre), "+boot_pc=%x" % regs["pc"]]
-    args += [a for a in os.environ.get("VM80A_EXTRA", "").split() if a]
-    subprocess.run(sim + args, check=True, stdout=subprocess.DEVNULL)
+        args += ["+boot=" + side("boot", "\n".join("%02x" % b for b in pre) + "\n"),
+                 "+boot_len=%x" % len(pre), "+boot_pc=%x" % regs["pc"]]
+    return args
 
+
+def check(man, outdir, quiet=False):
+    """Compare the files a run left in outdir with the manifest's expect."""
+    mid = man["id"]
+    out = {k: os.path.join(outdir, f"{mid}.{k}") for k in ("trace", "result", "mem", "ioout")}
     res = parse_result(out["result"])
     if "error" in res:
         raise SystemExit(f"{mid}: harness error: {res['error']}")
@@ -167,14 +176,45 @@ def run(manifest_path, outdir, sim, seed):
             bad.append(f"{k}: expected {man['expect'][k]} got {final[k]}")
     if result["x_samples"]:
         bad.append(f"x_samples: {result['x_samples']} samples with X after reset release")
-    for l in open(out["trace"]):
+    for l in open(out["trace"]) if os.path.exists(out["trace"]) else []:
         if not l.startswith("#") and "x" in l.lower().replace("zz", ""):
             bad.append("X in trace row: " + l.strip())
             break
     if bad:
         raise SystemExit(f"{mid}: " + "; ".join(bad))
-    print(f"{mid}: result ok ({final['tstates']} T-states, {final['instructions']} instructions, "
-          f"{result['pre_sync']} pre-sync, writes {res['wlist']}, io_out {len(final['io_out'])})")
+    if not quiet:
+        print(f"{mid}: result ok ({final['tstates']} T-states, {final['instructions']} instructions, "
+              f"{result['pre_sync']} pre-sync, writes {len(res['wlist'])}, io_out {len(final['io_out'])})")
+
+
+def run(manifest_path, outdir, sim, seed, trace=True):
+    man = json.load(open(manifest_path, encoding="utf-8"))
+    os.makedirs(outdir, exist_ok=True)
+    args = prepare(man, os.path.dirname(os.path.abspath(manifest_path)), outdir, outdir, outdir, trace)
+    if seed is not None:
+        args += ["+verilator+rand+reset+2", f"+verilator+seed+{seed}"]
+    args += [a for a in os.environ.get("VM80A_EXTRA", "").split() if a]
+    subprocess.run(sim + args, check=True, stdout=subprocess.DEVNULL)
+    check(man, outdir)
+
+
+def com_manifest(com, name, max_tstates):
+    """K3 manifest for a CP/M .COM under the K5 shim (no expectations)."""
+    img = open(com, "rb").read()
+    return {
+        "format": "i8080-exec-manifest/1", "id": name, "profile": "i8080a/1",
+        "image": {"origin": "0x0100", "hex": img.hex(), "sha256": hashlib.sha256(img).hexdigest()},
+        "memory": {"fill": "0x00", "regions": [{"start": "0x0000", "size": "0x10000", "kind": "ram"}]},
+        "initial": {"pc": "0x0100", "sp": "0xfe00", "a": "0x00", "b": "0x00", "c": "0x00", "d": "0x00",
+                    "e": "0x00", "h": "0x00", "l": "0x00", "f": "0x02", "inte": 0},
+        "io": {"in": {}, "in_default": "0xff"}, "shim": "cpm/1", "stimulus": None,
+        "stop": {"on_hlt": True, "ports": ["0xff"], "max_instructions": 0, "max_tstates": max_tstates},
+        "expect": {},
+    }
+
+
+def console(ioout):
+    return bytes(int(l.split()[1], 16) for l in open(ioout) if l.split() and l.split()[0] == "01")
 
 
 def main(argv):
@@ -193,6 +233,33 @@ def main(argv):
             print(f"MISMATCH binary dump ({len(got)} bytes) differs from hex dump [{start:#x}+{size:#x}]")
             return 1
         print(f"binary dump equals hex dump [{start:#x}+{size:#x}]")
+        return 0
+    if len(argv) >= 6 and argv[1] == "args":
+        # args <manifest> <side-dir> <side-ref> <out-ref> [--trace]: <side-dir>/<id>.args, one plusarg per line
+        man = json.load(open(argv[2], encoding="utf-8"))
+        args = prepare(man, os.path.dirname(os.path.abspath(argv[2])), argv[3], argv[4], argv[5],
+                       trace="--trace" in argv[6:])
+        with open(os.path.join(argv[3], man["id"] + ".args"), "w") as f:
+            f.write("\n".join(args) + "\n")
+        return 0
+    if len(argv) >= 4 and argv[1] == "check":
+        # check <manifest> <outdir>: results left by a run
+        check(json.load(open(argv[2], encoding="utf-8")), argv[3])
+        return 0
+    if len(argv) >= 5 and argv[1] == "com" and "--" in argv:
+        # com <file.COM> <outdir> [--seed N] [--max-tstates N] [--trace] -- <simulator...>
+        i = argv.index("--")
+        opts = argv[4:i]
+        seed = int(opts[opts.index("--seed") + 1]) if "--seed" in opts else None
+        budget = int(opts[opts.index("--max-tstates") + 1]) if "--max-tstates" in opts else 2000000000
+        name = os.path.splitext(os.path.basename(argv[2]))[0]
+        os.makedirs(argv[3], exist_ok=True)
+        mpath = os.path.join(argv[3], name + ".manifest.json")
+        json.dump(com_manifest(argv[2], name, budget), open(mpath, "w"), indent=1)
+        run(mpath, argv[3], argv[i + 1:], seed, trace="--trace" in opts)
+        text = console(os.path.join(argv[3], name + ".ioout"))
+        open(os.path.join(argv[3], name + ".console"), "wb").write(text)
+        sys.stdout.write(text.decode("latin-1"))
         return 0
     if len(argv) >= 5 and argv[1] == "run" and "--" in argv:
         i = argv.index("--")

@@ -10,6 +10,8 @@ out=$b/results
 vm80a() { python3 -I scripts/vm80a.py "$@"; }
 icarus=(vvp "$b/icarus/tb.vvp")
 verilator=("$b/verilator/vm80a_sim")
+fast=("$b/verilator/vm80a_sim_fast")
+fstdump=$b/fstdump
 failed=0
 check() { # description, command...
     local what=$1; shift
@@ -52,6 +54,10 @@ for f in io-console:io-console inta:inta-rst inta:inta-call; do
         for ext in trace mem ioout; do
             check "verilator $id seed $seed: $ext identical to icarus" cmp "$out/icarus-io/$id.$ext" "$out/verilator-io-$seed/$id.$ext"
         done
+        check "vm80a_sim_fast $id seed $seed: result matches manifest" vm80a run $m "$out/fast-io-$seed" "${s[@]}" -- "${fast[@]}"
+        for ext in trace mem ioout; do
+            check "vm80a_sim_fast $id seed $seed: $ext identical to icarus" cmp "$out/icarus-io/$id.$ext" "$out/fast-io-$seed/$id.$ext"
+        done
     done
 done
 r=$out/icarus-io
@@ -81,12 +87,26 @@ m = json.load(open(sys.argv[1]))
 h = bytes.fromhex("".join(open(sys.argv[2]).read().split()))
 sys.exit(0 if h.hex() == m["image"]["hex"] else "hex file differs from the manifest")' $fx/mvi-sta-hlt.json $fx/mvi-sta-hlt.hex
 
-echo "== VCD"
-for sim in icarus verilator; do
-    if [ $sim = icarus ]; then cmd=("${icarus[@]}"); else cmd=("${verilator[@]}"); fi
-    VM80A_EXTRA="+vcd=$out/$sim.vcd" check "$sim: VCD written with signals and time" \
-        sh -c "python3 -I scripts/vm80a.py run $fx/mvi-sta-hlt.json $out/vcd-$sim -- ${cmd[*]} && grep -q '^\$enddefinitions' $out/$sim.vcd && grep -q '^#' $out/$sim.vcd"
+echo "== VCD (Icarus), FST (vm80a_sim) and the register set"
+VM80A_EXTRA="+vcd=$out/icarus.vcd" check "icarus: VCD written with signals and time" \
+    sh -c "python3 -I scripts/vm80a.py run $fx/mvi-sta-hlt.json $out/vcd-icarus -- ${icarus[*]} && grep -q '^\$enddefinitions' $out/icarus.vcd && grep -q '^#' $out/icarus.vcd"
+VM80A_EXTRA="+fst=$out/fixture.fst" check "vm80a_sim: FST written" \
+    sh -c "python3 -I scripts/vm80a.py run $fx/mvi-sta-hlt.json $out/fst-run -- ${verilator[*]} && test -s $out/fixture.fst"
+regs="acc:8 r16_bc:16 r16_de:16 r16_hl:16 r16_sp:16 r16_pc:16 r16_wz:16 psw_z:1 psw_s:1 psw_p:1 psw_c:1 psw_ac:1"
+"$fstdump" "$out/fixture.fst" vars > "$out/fixture.vars"
+for rw in $regs; do
+    check "FST holds i8080_tb.dut.${rw%%:*} with width ${rw##*:}" grep -qx "i8080_tb.dut.${rw%%:*} ${rw##*:}" "$out/fixture.vars"
 done
+check "FST holds the pins (i8080_tb.pin_a, pin_sync, pin_dbin, pin_wr_n)" sh -c \
+    "for p in pin_a pin_sync pin_dbin pin_wr_n; do grep -q \"^i8080_tb.\$p \" $out/fixture.vars || exit 1; done"
+check "FST: the accumulator register ends at 2a" sh -c \
+    "test \"\$($fstdump $out/fixture.fst final i8080_tb.dut.acc)\" = 'i8080_tb.dut.acc 2a'"
+"$fstdump" "$out/fixture.fst" changes i8080_tb.dut.r16_pc > "$out/fixture.pc"
+echo "      (r16_pc changes: $(tr '\n' ',' < "$out/fixture.pc"))"
+check "vm80a_sim_fast has no FST: +fst= is an error" sh -c \
+    "${fast[*]} +image=$out/icarus/mvi-sta-hlt.img +ram_start=0 +ram_size=4000 +fst=$out/x.fst +result=$out/fast-fst.result >/dev/null; grep -q '^error=no FST' $out/fast-fst.result"
+check "vm80a_sim: +vcd= is an error (the build writes FST)" sh -c \
+    "${verilator[*]} +image=$out/icarus/mvi-sta-hlt.img +ram_start=0 +ram_size=4000 +vcd=$out/x.vcd +result=$out/fst-vcd.result >/dev/null; grep -q '^error=this build writes FST' $out/fst-vcd.result"
 
 echo "== memory dump range and raw bytes"
 img=$out/icarus/mvi-sta-hlt.img

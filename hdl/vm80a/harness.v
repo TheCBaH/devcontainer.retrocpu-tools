@@ -14,7 +14,9 @@
 //   +idle_din=<hex>    byte on the data input when nothing reads, default ff
 //   +dump_start=<hex> +dump_size=<hex>   range written by +memdump/+membin
 //                      (default the whole 64 KiB; bytes outside the regions are 00)
-//   +trace= +result= +vcd=               output files
+//   +trace= +result=                     output files (pin trace, key=value result)
+//   +vcd=<file>        VCD of the whole bench and vm80a_core (Icarus build)
+//   +fst=<file>        FST of the same (build with -DVM80A_FST: Verilator --trace-fst)
 //   +memdump=<file>    one hex byte per line
 //   +membin=<file>     raw bytes
 //
@@ -56,9 +58,11 @@ vm80a_core dut
    .pin_wr_n  (pin_wr_n)
 );
 
+/*verilator tracing_off*/
 reg [7:0]   mem [0:65535];
 integer     ram_start = 0, ram_size = 0, rom_start = 0, rom_size = 0;
-integer     max_tstates = 1000000, tail = 2;
+longint     max_tstates = 1000000, vlong;
+integer     tail = 2;
 reg [7:0]   idle_din = 8'hff, fill = 8'h00;
 integer     origin = 0;
 
@@ -78,10 +82,12 @@ reg [7:0]   dbyte;
 integer     have_stim, have_trace, have_result, have_memdump;
 
 // run state
-integer     r = 0, r_release = 0, released = 0, started = 0;
-integer     n = 0, pre_sync = 0, cyc = -1, r_t1 = 0;
-integer     instr = 0, nwrites = 0, xcount = 0, done = 0;
-integer     twh_seen = 0, tail_left = 0, counted = 0, halt_cycle = 0;
+longint     r = 0, r_release = 0, r_t1 = 0, n = 0, counted = 0, instr = 0;
+integer     released = 0, started = 0;
+longint     pre_sync = 0;
+integer     cyc = -1;
+integer     nwrites = 0, xcount = 0, done = 0;
+integer     twh_seen = 0, tail_left = 0, halt_cycle = 0;
 integer     fault = 0, wlog_n = 0, di_active = 0;
 reg [15:0]  pc_halt = 16'h0000;
 reg         prev_wr_n = 1'b1;
@@ -229,7 +235,7 @@ begin
             port_b = prev_a[7:0];
             if (prev_a[15:8] != port_b) dup_err = dup_err + 1;
             nout = nout + 1;
-            if (have_ioout) $fwrite(ofd, "%02h %02h\n", port_b, prev_do);
+            if (have_ioout) begin $fwrite(ofd, "%02h %02h\n", port_b, prev_do); $fflush(ofd); end
             if (stop_mask[port_b]) stop_pending = 1;
          end else if (cyc_kind == 1) begin
             if (!in_ram(prev_a)) set_fault(in_rom(prev_a) ? "rom write" : "write", prev_a);
@@ -385,7 +391,7 @@ initial begin
    if ($value$plusargs("ram_size=%h", vval)) ram_size = vval;
    if ($value$plusargs("rom_start=%h", vval)) rom_start = vval;
    if ($value$plusargs("rom_size=%h", vval)) rom_size = vval;
-   if ($value$plusargs("max_tstates=%d", vval)) max_tstates = vval;
+   if ($value$plusargs("max_tstates=%d", vlong)) max_tstates = vlong;
    if ($value$plusargs("tail=%d", vval)) tail = vval;
    if ($value$plusargs("idle_din=%h", vval)) idle_din = vval;
    if ($value$plusargs("origin=%h", vval)) origin = vval;
@@ -423,9 +429,17 @@ initial begin
    if (have_ioout) ofd = $fopen(sbuf, "w");
    have_trace = $value$plusargs("trace=%s", sbuf);
    if (have_trace) tfd = $fopen(sbuf, "w");
+`ifdef VM80A_FST
+   if ($value$plusargs("vcd=%s", sbuf)) fail("this build writes FST: use +fst=");
+   if ($value$plusargs("fst=%s", sbuf)) begin
+      $dumpfile(sbuf); $dumpvars(0, i8080_tb.dut);
+   end
+`else
+   if ($value$plusargs("fst=%s", sbuf)) fail("no FST in this build");
    if ($value$plusargs("vcd=%s", sbuf)) begin
       $dumpfile(sbuf); $dumpvars(0, i8080_tb);
    end
+`endif
    if ($value$plusargs("stim=%s", sbuf)) parse_stim;
    else begin
       ev_sig[0] = 0; ev_val[0] = 0; ev_anch[0] = 0; ev_a[0] = 4; ev_k[0] = 0; nev = 1;

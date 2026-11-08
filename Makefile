@@ -38,11 +38,27 @@ $(VM80A_OUT)/icarus/tb.vvp: $(VM80A_HDL) $(VM80A_RTL)
 	mkdir -p $(@D)
 	iverilog -g2012 -Wall -Wno-timescale -s i8080_tb -o $@ $(VM80A_HDL) $(VM80A_RTL)
 
-$(VM80A_OUT)/verilator/vm80a_sim: $(VM80A_HDL) $(VM80A_RTL)
+# vm80a_sim: FST waveforms (+fst=); vm80a_sim_fast: none, built for speed.
+# Keep the flags in step with scripts/build-vm80a-sim.sh.
+VM80A_VFLAGS = --binary --timing --top-module i8080_tb --x-initial unique -O3 -CFLAGS -O3 \
+	-Wno-fatal -Wno-lint -Wno-style
+VM80A_GTKWAVE = $(shell verilator --getenv VERILATOR_ROOT)/include/gtkwave
+
+$(VM80A_OUT)/verilator/vm80a_sim: $(VM80A_HDL) $(VM80A_RTL) hdl/vm80a/trace.vlt
 	mkdir -p $(@D)
-	verilator --binary --timing --trace --top-module i8080_tb --x-initial unique \
-		-Wno-fatal -Wno-lint -Wno-style -Mdir $(@D)/obj -o vm80a_sim $(VM80A_HDL) $(VM80A_RTL)
+	verilator $(VM80A_VFLAGS) --trace-fst -DVM80A_FST -Mdir $(@D)/obj -o vm80a_sim \
+		hdl/vm80a/trace.vlt $(VM80A_HDL) $(VM80A_RTL)
 	cp $(@D)/obj/vm80a_sim $@
 
-vm80a-test: $(VM80A_OUT)/icarus/tb.vvp $(VM80A_OUT)/verilator/vm80a_sim
+$(VM80A_OUT)/verilator/vm80a_sim_fast: $(VM80A_HDL) $(VM80A_RTL)
+	mkdir -p $(@D)
+	verilator $(VM80A_VFLAGS) -Mdir $(@D)/obj-fast -o vm80a_sim_fast $(VM80A_HDL) $(VM80A_RTL)
+	cp $(@D)/obj-fast/vm80a_sim_fast $@
+
+$(VM80A_OUT)/fstdump: scripts/fstdump.c
+	mkdir -p $(@D)
+	$(CC) -O2 -DFST_CONFIG_INCLUDE='"fst_config.h"' -I$(VM80A_GTKWAVE) -o $@ $< \
+		$(VM80A_GTKWAVE)/fstapi.c $(VM80A_GTKWAVE)/lz4.c $(VM80A_GTKWAVE)/fastlz.c -lz -lpthread
+
+vm80a-test: $(VM80A_OUT)/icarus/tb.vvp $(VM80A_OUT)/verilator/vm80a_sim $(VM80A_OUT)/verilator/vm80a_sim_fast $(VM80A_OUT)/fstdump
 	scripts/test-vm80a.sh $(VM80A_OUT)
